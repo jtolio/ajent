@@ -39,6 +39,8 @@ func (s *Session) getUserInput(ctx context.Context) (Content, error) {
 		return Content{}, err
 	}
 	if !strings.HasSuffix(input, "\n") {
+		_, _ = fmt.Fprint(s.output, "\n\n")
+	} else {
 		_, _ = fmt.Fprint(s.output, "\n")
 	}
 	return Content{
@@ -57,7 +59,7 @@ func (s *Session) callTool(ctx context.Context, call Content) (Content, error) {
 }
 
 func (s *Session) messageOutput(ctx context.Context, msg Content) error {
-	_, err := fmt.Fprintln(s.output, msg.Text)
+	_, err := fmt.Fprintf(s.output, "%s\n\n", msg.Text)
 	return err
 }
 
