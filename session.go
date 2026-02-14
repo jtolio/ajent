@@ -12,42 +12,15 @@ const (
 	maxUserLineLength = 32768
 )
 
-type Content struct {
-	Type string `json:"type"`
-
-	Text string `json:"text"`
-
-	Id    string            `json:"id"`
-	Name  string            `json:"name"`
-	Input map[string]string `json:"input"`
-
-	ToolUseId string `json:"tool_use_id"`
-	Content   string `json:"content"`
-	IsError   bool   `json:"is_error"`
-}
-
-type Message struct {
-	Role       string    `json:"role"`
-	StopReason string    `json:"stop_reason"`
-	Content    []Content `json:"content"`
-}
-
-func (m *Message) Filter(typ string) (rv []Content) {
-	for _, c := range m.Content {
-		if c.Type == typ {
-			rv = append(rv, c)
-		}
-	}
-	return rv
-}
-
 type Session struct {
+	llm    *LLM
 	input  *UnbufferedLineReader
 	output io.Writer
 }
 
-func NewSession(input io.Reader, output io.Writer) *Session {
+func NewSession(llm *LLM, input io.Reader, output io.Writer) *Session {
 	return &Session{
+		llm:    llm,
 		input:  NewUnbufferedLineReader(input, maxUserLineLength),
 		output: output,
 	}
@@ -71,17 +44,6 @@ func (s *Session) getUserInput(ctx context.Context) (Content, error) {
 	return Content{
 		Type: "text",
 		Text: input,
-	}, nil
-}
-
-func (s *Session) getLLM(ctx context.Context, msgs []Message) (Message, error) {
-	return Message{
-		Content: []Content{
-			{
-				Type: "text",
-				Text: "unimplemented",
-			},
-		},
 	}, nil
 }
 
@@ -110,29 +72,33 @@ func (s *Session) Run(ctx context.Context) error {
 		Content: []Content{input}})
 
 	for {
-		resp, err := s.getLLM(ctx, messages)
+		resp, err := s.llm.Exchange(ctx, messages)
 		if err != nil {
 			return err
 		}
 		messages = append(messages, resp)
+		messages[len(messages)-1].StopReason = ""
 
 		next := Message{
 			Role: "user",
 		}
 
-		for _, c := range resp.Filter("text") {
-			err := s.messageOutput(ctx, c)
-			if err != nil {
-				return err
+		for _, c := range resp.Content {
+			switch c.Type {
+			case "text":
+				err := s.messageOutput(ctx, c)
+				if err != nil {
+					return err
+				}
+			case "tool_use":
+				result, err := s.callTool(ctx, c)
+				if err != nil {
+					return err
+				}
+				next.Content = append(next.Content, result)
+			default:
+				return fmt.Errorf("unexpected type %q", c.Type)
 			}
-		}
-
-		for _, toolCall := range resp.Filter("tool_use") {
-			result, err := s.callTool(ctx, toolCall)
-			if err != nil {
-				return err
-			}
-			next.Content = append(next.Content, result)
 		}
 
 		if resp.StopReason == "end_turn" || len(next.Content) == 0 {
