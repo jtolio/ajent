@@ -9,7 +9,7 @@ import (
 var (
 	flagAPIURL = flag.String("api-url", "https://api.anthropic.com/v1/messages", "the API URL")
 	flagAPIKey = flag.String("api-key", "", "your api key")
-	flagModel  = flag.String("model", "claude-opus-4-6", "the model to use")
+	flagModel  = flag.String("model", "claude-haiku-4-5", "the model to use")
 )
 
 func main() {

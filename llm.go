@@ -24,8 +24,9 @@ type Config struct {
 }
 
 type LLM struct {
-	HTTP *http.Client
-	Cfg  Config
+	HTTP  *http.Client
+	Cfg   Config
+	Tools []ToolDefinition
 }
 
 func NewLLM(cfg Config) *LLM {
@@ -36,6 +37,10 @@ func NewLLM(cfg Config) *LLM {
 	return &LLM{
 		HTTP: http.DefaultClient,
 		Cfg:  cfg,
+		Tools: []ToolDefinition{
+			{Type: "web_search_20250305", Name: "web_search"},
+			{Type: "web_fetch_20250910", Name: "web_fetch"},
+		},
 	}
 }
 
@@ -47,6 +52,7 @@ func (l *LLM) Exchange(ctx context.Context, msgs []Message) (m Message, err erro
 		SystemPrompt: l.Cfg.SystemPrompt,
 		Messages:     msgs,
 		Temperature:  l.Cfg.Temperature,
+		Tools:        l.Tools,
 	}
 
 	var buf bytes.Buffer

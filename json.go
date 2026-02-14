@@ -10,7 +10,7 @@ type Content struct {
 	Input map[string]string `json:"input,omitempty"`
 
 	ToolUseId string `json:"tool_use_id,omitempty"`
-	Content   string `json:"content,omitempty"`
+	Content   any    `json:"content,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
 }
 
@@ -29,7 +29,10 @@ func (m *Message) Filter(typ string) (rv []Content) {
 	return rv
 }
 
-type ToolDefinition struct{}
+type ToolDefinition struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
 
 type request struct {
 	Model        string           `json:"model"`

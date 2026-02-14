@@ -98,6 +98,7 @@ func (s *Session) Run(ctx context.Context) error {
 					return err
 				}
 				next.Content = append(next.Content, result)
+			case "server_tool_use", "web_search_tool_result", "web_fetch_tool_result":
 			default:
 				return fmt.Errorf("unexpected type %q", c.Type)
 			}
