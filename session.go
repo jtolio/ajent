@@ -69,9 +69,19 @@ func (s *Session) Run(ctx context.Context) error {
 				_, _ = fmt.Fprintf(s.output, "%s\n\n", text)
 			}
 			for _, call := range resp.Tools {
+				var result string
+				if call.Ref != nil && call.Ref.Function != nil {
+					var err error
+					result, err = call.Ref.Function(ctx, call)
+					if err != nil {
+						result = fmt.Sprintf("error: %v", err)
+					}
+				} else {
+					result = fmt.Sprintf("error: unknown tool %q", call.Name)
+				}
 				prompts = append(prompts,
 					prompt.AsToolCall(call.ID, call.Name, call.Argument),
-					prompt.AsToolResponse(call.ID, call.Name, "tool use unimplemented"),
+					prompt.AsToolResponse(call.ID, call.Name, result),
 				)
 			}
 			continue
