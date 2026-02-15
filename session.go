@@ -6,115 +6,131 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	anyllm "github.com/mozilla-ai/any-llm-go"
 )
 
-const (
-	maxUserLineLength = 32768
-)
+const maxUserLineLength = 32768
 
 type Session struct {
-	llm    *LLM
-	input  *UnbufferedLineReader
-	output io.Writer
+	provider     anyllm.Provider
+	params       anyllm.CompletionParams
+	systemPrompt string
+	input        *UnbufferedLineReader
+	output       io.Writer
 }
 
-func NewSession(llm *LLM, input io.Reader, output io.Writer) *Session {
+func NewSession(provider anyllm.Provider, params anyllm.CompletionParams, systemPrompt string, input io.Reader, output io.Writer) *Session {
 	return &Session{
-		llm:    llm,
-		input:  NewUnbufferedLineReader(input, maxUserLineLength),
-		output: output,
+		provider:     provider,
+		params:       params,
+		systemPrompt: systemPrompt,
+		input:        NewUnbufferedLineReader(input, maxUserLineLength),
+		output:       output,
 	}
 }
 
-func (s *Session) getUserInput(ctx context.Context) (Content, error) {
+func (s *Session) exchange(ctx context.Context, msgs []anyllm.Message) (*anyllm.ChatCompletion, error) {
+	params := s.params
+	params.Messages = msgs
+	return s.provider.Completion(ctx, params)
+}
+
+func (s *Session) getUserInput(ctx context.Context) (string, error) {
 	_, err := fmt.Fprintf(s.output, "> ")
 	if err != nil {
-		return Content{}, err
+		return "", err
 	}
 	input, err := s.input.ReadLine()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			_, _ = fmt.Fprint(s.output, "\r")
 		}
-		return Content{}, err
+		return "", err
 	}
 	if !strings.HasSuffix(input, "\n") {
 		_, _ = fmt.Fprint(s.output, "\n\n")
 	} else {
 		_, _ = fmt.Fprint(s.output, "\n")
 	}
-	return Content{
-		Type: "text",
-		Text: input,
+	return input, nil
+}
+
+func (s *Session) callTool(ctx context.Context, tc anyllm.ToolCall) (anyllm.Message, error) {
+	return anyllm.Message{
+		Role:       anyllm.RoleTool,
+		ToolCallID: tc.ID,
+		Content:    "tool use unimplemented",
 	}, nil
 }
 
-func (s *Session) callTool(ctx context.Context, call Content) (Content, error) {
-	return Content{
-		Type:      "tool_result",
-		ToolUseId: call.Id,
-		IsError:   true,
-		Content:   "tool use unimplemented",
-	}, nil
-}
-
-func (s *Session) messageOutput(ctx context.Context, msg Content) error {
-	_, err := fmt.Fprintf(s.output, "%s\n\n", msg.Text)
+func (s *Session) messageOutput(ctx context.Context, text string) error {
+	_, err := fmt.Fprintf(s.output, "%s\n\n", text)
 	return err
 }
 
 func (s *Session) Run(ctx context.Context) error {
-	var messages []Message
+	var messages []anyllm.Message
+
+	if s.systemPrompt != "" {
+		messages = append(messages, anyllm.Message{
+			Role:    anyllm.RoleSystem,
+			Content: s.systemPrompt,
+		})
+	}
+
 	input, err := s.getUserInput(ctx)
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		return err
 	}
-	messages = append(messages, Message{
-		Role:    "user",
-		Content: []Content{input}})
+	messages = append(messages, anyllm.Message{
+		Role:    anyllm.RoleUser,
+		Content: input,
+	})
 
 	for {
-		resp, err := s.llm.Exchange(ctx, messages)
+		resp, err := s.exchange(ctx, messages)
 		if err != nil {
 			return err
 		}
-		messages = append(messages, resp)
-		messages[len(messages)-1].StopReason = ""
-
-		next := Message{
-			Role: "user",
+		if len(resp.Choices) == 0 {
+			return fmt.Errorf("no choices in response")
 		}
 
-		for _, c := range resp.Content {
-			switch c.Type {
-			case "text":
-				err := s.messageOutput(ctx, c)
-				if err != nil {
-					return err
-				}
-			case "tool_use":
-				result, err := s.callTool(ctx, c)
-				if err != nil {
-					return err
-				}
-				next.Content = append(next.Content, result)
-			case "server_tool_use", "web_search_tool_result", "web_fetch_tool_result":
-			default:
-				return fmt.Errorf("unexpected type %q", c.Type)
-			}
-		}
+		choice := resp.Choices[0]
+		messages = append(messages, choice.Message)
 
-		if resp.StopReason == "end_turn" || len(next.Content) == 0 {
-			input, err := s.getUserInput(ctx)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					return nil
-				}
+		text := choice.Message.ContentString()
+		if text != "" {
+			if err := s.messageOutput(ctx, text); err != nil {
 				return err
 			}
-			next.Content = append(next.Content, input)
 		}
 
-		messages = append(messages, next)
+		if choice.FinishReason == anyllm.FinishReasonToolCalls {
+			for _, tc := range choice.Message.ToolCalls {
+				result, err := s.callTool(ctx, tc)
+				if err != nil {
+					return err
+				}
+				messages = append(messages, result)
+			}
+			continue
+		}
+
+		input, err := s.getUserInput(ctx)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		messages = append(messages, anyllm.Message{
+			Role:    anyllm.RoleUser,
+			Content: input,
+		})
 	}
 }
