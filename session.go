@@ -16,15 +16,17 @@ type Session struct {
 	provider     anyllm.Provider
 	params       anyllm.CompletionParams
 	systemPrompt string
+	tools        map[string]func(ctx context.Context, args string) string
 	input        *UnbufferedLineReader
 	output       io.Writer
 }
 
-func NewSession(provider anyllm.Provider, params anyllm.CompletionParams, systemPrompt string, input io.Reader, output io.Writer) *Session {
+func NewSession(provider anyllm.Provider, params anyllm.CompletionParams, systemPrompt string, tools map[string]func(ctx context.Context, args string) string, input io.Reader, output io.Writer) *Session {
 	return &Session{
 		provider:     provider,
 		params:       params,
 		systemPrompt: systemPrompt,
+		tools:        tools,
 		input:        NewUnbufferedLineReader(input, maxUserLineLength),
 		output:       output,
 	}
@@ -57,10 +59,19 @@ func (s *Session) getUserInput(ctx context.Context) (string, error) {
 }
 
 func (s *Session) callTool(ctx context.Context, tc anyllm.ToolCall) (anyllm.Message, error) {
+	fn, ok := s.tools[tc.Function.Name]
+	if !ok {
+		return anyllm.Message{
+			Role:       anyllm.RoleTool,
+			ToolCallID: tc.ID,
+			Content:    fmt.Sprintf("error: unknown tool %q", tc.Function.Name),
+		}, nil
+	}
+	result := fn(ctx, tc.Function.Arguments)
 	return anyllm.Message{
 		Role:       anyllm.RoleTool,
 		ToolCallID: tc.ID,
-		Content:    "tool use unimplemented",
+		Content:    result,
 	}, nil
 }
 
