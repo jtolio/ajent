@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/modfin/bellman/models/gen"
+	"github.com/modfin/bellman/prompt"
 )
 
 const (
@@ -13,108 +16,82 @@ const (
 )
 
 type Session struct {
-	llm    *LLM
+	gen    *gen.Generator
 	input  *UnbufferedLineReader
 	output io.Writer
 }
 
-func NewSession(llm *LLM, input io.Reader, output io.Writer) *Session {
+func NewSession(g *gen.Generator, input io.Reader, output io.Writer) *Session {
 	return &Session{
-		llm:    llm,
+		gen:    g,
 		input:  NewUnbufferedLineReader(input, maxUserLineLength),
 		output: output,
 	}
 }
 
-func (s *Session) getUserInput(ctx context.Context) (Content, error) {
+func (s *Session) getUserInput(ctx context.Context) (string, error) {
 	_, err := fmt.Fprintf(s.output, "> ")
 	if err != nil {
-		return Content{}, err
+		return "", err
 	}
 	input, err := s.input.ReadLine()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			_, _ = fmt.Fprint(s.output, "\r")
 		}
-		return Content{}, err
+		return "", err
 	}
 	if !strings.HasSuffix(input, "\n") {
 		_, _ = fmt.Fprint(s.output, "\n\n")
 	} else {
 		_, _ = fmt.Fprint(s.output, "\n")
 	}
-	return Content{
-		Type: "text",
-		Text: input,
-	}, nil
-}
-
-func (s *Session) callTool(ctx context.Context, call Content) (Content, error) {
-	return Content{
-		Type:      "tool_result",
-		ToolUseId: call.Id,
-		IsError:   true,
-		Content:   "tool use unimplemented",
-	}, nil
-}
-
-func (s *Session) messageOutput(ctx context.Context, msg Content) error {
-	_, err := fmt.Fprintf(s.output, "%s\n\n", msg.Text)
-	return err
+	return input, nil
 }
 
 func (s *Session) Run(ctx context.Context) error {
-	var messages []Message
+	var prompts []prompt.Prompt
+
 	input, err := s.getUserInput(ctx)
 	if err != nil {
 		return err
 	}
-	messages = append(messages, Message{
-		Role:    "user",
-		Content: []Content{input}})
+	prompts = append(prompts, prompt.AsUser(input))
 
 	for {
-		resp, err := s.llm.Exchange(ctx, messages)
+		resp, err := s.gen.WithContext(ctx).Prompt(prompts...)
 		if err != nil {
 			return err
 		}
-		messages = append(messages, resp)
-		messages[len(messages)-1].StopReason = ""
 
-		next := Message{
-			Role: "user",
-		}
-
-		for _, c := range resp.Content {
-			switch c.Type {
-			case "text":
-				err := s.messageOutput(ctx, c)
-				if err != nil {
-					return err
-				}
-			case "tool_use":
-				result, err := s.callTool(ctx, c)
-				if err != nil {
-					return err
-				}
-				next.Content = append(next.Content, result)
-			case "server_tool_use", "web_search_tool_result", "web_fetch_tool_result":
-			default:
-				return fmt.Errorf("unexpected type %q", c.Type)
+		if resp.IsTools() {
+			for _, text := range resp.Texts {
+				_, _ = fmt.Fprintf(s.output, "%s\n\n", text)
 			}
-		}
-
-		if resp.StopReason == "end_turn" || len(next.Content) == 0 {
-			input, err := s.getUserInput(ctx)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					return nil
-				}
-				return err
+			for _, call := range resp.Tools {
+				prompts = append(prompts,
+					prompt.AsToolCall(call.ID, call.Name, call.Argument),
+					prompt.AsToolResponse(call.ID, call.Name, "tool use unimplemented"),
+				)
 			}
-			next.Content = append(next.Content, input)
+			continue
 		}
 
-		messages = append(messages, next)
+		text, err := resp.AsText()
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(s.output, "%s\n\n", text)
+
+		prompts = append(prompts, prompt.AsAssistant(text))
+
+		input, err := s.getUserInput(ctx)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		prompts = append(prompts, prompt.AsUser(input))
 	}
 }
