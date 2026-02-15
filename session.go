@@ -9,6 +9,7 @@ import (
 
 	"github.com/modfin/bellman/models/gen"
 	"github.com/modfin/bellman/prompt"
+	"github.com/modfin/bellman/tools"
 )
 
 const (
@@ -49,6 +50,17 @@ func (s *Session) getUserInput(ctx context.Context) (string, error) {
 	return input, nil
 }
 
+func (s *Session) callTool(ctx context.Context, call tools.Call) string {
+	if call.Ref == nil {
+		return fmt.Sprintf("error: unknown tool %q", call.Name)
+	}
+	result, err := call.Ref.Function(ctx, call)
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	return result
+}
+
 func (s *Session) Run(ctx context.Context) error {
 	var prompts []prompt.Prompt
 
@@ -64,44 +76,29 @@ func (s *Session) Run(ctx context.Context) error {
 			return err
 		}
 
-		if resp.IsTools() {
-			for _, text := range resp.Texts {
-				_, _ = fmt.Fprintf(s.output, "%s\n\n", text)
+		for _, text := range resp.Texts {
+			if _, err := fmt.Fprintf(s.output, "%s\n\n", text); err != nil {
+				return err
 			}
-			for _, call := range resp.Tools {
-				var result string
-				if call.Ref != nil && call.Ref.Function != nil {
-					var err error
-					result, err = call.Ref.Function(ctx, call)
-					if err != nil {
-						result = fmt.Sprintf("error: %v", err)
-					}
-				} else {
-					result = fmt.Sprintf("error: unknown tool %q", call.Name)
+			prompts = append(prompts, prompt.AsAssistant(text))
+		}
+
+		for _, call := range resp.Tools {
+			prompts = append(prompts,
+				prompt.AsToolCall(call.ID, call.Name, call.Argument),
+				prompt.AsToolResponse(call.ID, call.Name, s.callTool(ctx, call)),
+			)
+		}
+
+		if len(resp.Tools) == 0 {
+			input, err := s.getUserInput(ctx)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
 				}
-				prompts = append(prompts,
-					prompt.AsToolCall(call.ID, call.Name, call.Argument),
-					prompt.AsToolResponse(call.ID, call.Name, result),
-				)
+				return err
 			}
-			continue
+			prompts = append(prompts, prompt.AsUser(input))
 		}
-
-		text, err := resp.AsText()
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(s.output, "%s\n\n", text)
-
-		prompts = append(prompts, prompt.AsAssistant(text))
-
-		input, err := s.getUserInput(ctx)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		}
-		prompts = append(prompts, prompt.AsUser(input))
 	}
 }
