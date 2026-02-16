@@ -36,20 +36,24 @@ func (s *FileSerializer) Serialize(meta SessionMeta, history []prompt.Prompt) er
 	}
 	defer fh.Close()
 
-	full := fileFormat{
-		Meta:    meta,
-		History: history,
+	e := NewEncoder(fh)
+
+	if err := e.Encode(meta); err != nil {
+		return err
 	}
 
-	err = json.NewEncoder(fh).Encode(full)
-	if err != nil {
-		return err
+	for _, p := range history {
+		if err := e.Encode(p); err != nil {
+			return err
+		}
 	}
 
 	return fh.Close()
 }
 
 func (s *FileSerializer) Load() (meta SessionMeta, history []prompt.Prompt, found bool, err error) {
+	return SessionMeta{}, nil, false, nil
+
 	fh, err := os.Open(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
