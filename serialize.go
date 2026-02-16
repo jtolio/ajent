@@ -1,7 +1,8 @@
 package main
 
 import (
-	"encoding/json"
+	"errors"
+	"io"
 	"os"
 
 	"github.com/modfin/bellman/prompt"
@@ -22,11 +23,6 @@ type FileSerializer struct {
 
 func NewFileSerializer(path string) *FileSerializer {
 	return &FileSerializer{path: path}
-}
-
-type fileFormat struct {
-	Meta    SessionMeta     `json:"meta"`
-	History []prompt.Prompt `json:"history"`
 }
 
 func (s *FileSerializer) Serialize(meta SessionMeta, history []prompt.Prompt) error {
@@ -52,8 +48,6 @@ func (s *FileSerializer) Serialize(meta SessionMeta, history []prompt.Prompt) er
 }
 
 func (s *FileSerializer) Load() (meta SessionMeta, history []prompt.Prompt, found bool, err error) {
-	return SessionMeta{}, nil, false, nil
-
 	fh, err := os.Open(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -62,10 +56,21 @@ func (s *FileSerializer) Load() (meta SessionMeta, history []prompt.Prompt, foun
 		return SessionMeta{}, nil, false, err
 	}
 	defer fh.Close()
-	var full fileFormat
-	err = json.NewDecoder(fh).Decode(&full)
-	if err != nil {
+
+	d := NewDecoder(fh)
+
+	if err := d.Decode(&meta); err != nil {
 		return SessionMeta{}, nil, true, err
 	}
-	return full.Meta, full.History, true, nil
+	for {
+		var p prompt.Prompt
+		if err := d.Decode(&p); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return SessionMeta{}, nil, true, err
+		}
+		history = append(history, p)
+	}
+	return meta, history, true, nil
 }
