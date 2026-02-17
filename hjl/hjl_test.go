@@ -23,6 +23,20 @@ type subObj struct {
 	More string `json:"more,omitempty"`
 }
 
+type byteFieldObj struct {
+	Type string `json:"type"`
+	Data []byte `json:"data,omitempty"`
+}
+
+type nestedByteObj struct {
+	Type string     `json:"type"`
+	Sub  byteSubObj `json:"sub"`
+}
+
+type byteSubObj struct {
+	Data []byte `json:"data,omitempty"`
+}
+
 // --- Encoder tests ---
 
 func TestEncodeBasicNoHeredoc(t *testing.T) {
@@ -548,5 +562,192 @@ func TestRoundTripLargeValue(t *testing.T) {
 
 	if decoded != original {
 		t.Errorf("round trip failed for large value: lengths got %d, want %d", len(decoded.Text), len(original.Text))
+	}
+}
+
+// --- Base64 field override tests ---
+
+func TestEncodeBase64Field(t *testing.T) {
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	obj := byteFieldObj{Type: "test", Data: []byte(`{"query":"hello"}`)}
+	if err := enc.Encode(obj, "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	jsonLine := strings.Split(got, "\n")[0]
+	if strings.Contains(jsonLine, `"data"`) {
+		t.Errorf("JSON line should not contain base64 field: %s", jsonLine)
+	}
+	if !strings.Contains(got, `.data = <<`) {
+		t.Errorf("expected heredoc for data, got: %s", got)
+	}
+	if !strings.Contains(got, `{"query":"hello"}`) {
+		t.Errorf("expected readable content in heredoc, got: %s", got)
+	}
+}
+
+func TestEncodeBase64FieldNilSkipped(t *testing.T) {
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	obj := byteFieldObj{Type: "test"} // Data is nil
+	if err := enc.Encode(obj, "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	if strings.Contains(got, ".data") {
+		t.Errorf("nil base64 field should be skipped, got: %s", got)
+	}
+}
+
+func TestDecodeBase64Override(t *testing.T) {
+	input := `{"type":"test"}
+.data = <<END0
+{"query":"hello"}END0
+`
+	dec := NewDecoder(strings.NewReader(input))
+	var obj byteFieldObj
+	if err := dec.Decode(&obj, "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+	if obj.Type != "test" {
+		t.Errorf("got type %q, want %q", obj.Type, "test")
+	}
+	if string(obj.Data) != `{"query":"hello"}` {
+		t.Errorf("got data %q, want %q", string(obj.Data), `{"query":"hello"}`)
+	}
+}
+
+func TestDecodeBase64OverrideInlineUnaffected(t *testing.T) {
+	// "aGVsbG8=" is base64 of "hello"
+	input := `{"type":"test","data":"aGVsbG8="}` + "\n"
+	dec := NewDecoder(strings.NewReader(input))
+	var obj byteFieldObj
+	if err := dec.Decode(&obj, "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+	if string(obj.Data) != "hello" {
+		t.Errorf("got data %q, want %q", string(obj.Data), "hello")
+	}
+}
+
+func TestRoundTripBase64Field(t *testing.T) {
+	original := byteFieldObj{Type: "test", Data: []byte(`{"query":"hello world"}`)}
+
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	if err := enc.Encode(original, "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+
+	dec := NewDecoder(&buf)
+	var decoded byteFieldObj
+	if err := dec.Decode(&decoded, "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+
+	if decoded.Type != original.Type {
+		t.Errorf("type: got %q, want %q", decoded.Type, original.Type)
+	}
+	if string(decoded.Data) != string(original.Data) {
+		t.Errorf("data: got %q, want %q", string(decoded.Data), string(original.Data))
+	}
+}
+
+func TestRoundTripBase64WithStringHeredoc(t *testing.T) {
+	type mixedObj struct {
+		Type string `json:"type"`
+		Text string `json:"text,omitempty"`
+		Data []byte `json:"data,omitempty"`
+	}
+
+	original := mixedObj{
+		Type: "mixed",
+		Text: "hello\nworld\n",
+		Data: []byte(`{"key":"value"}`),
+	}
+
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	if err := enc.Encode(original, "text", "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+
+	dec := NewDecoder(&buf)
+	var decoded mixedObj
+	if err := dec.Decode(&decoded, "data:base64"); err != nil {
+		t.Fatal(err)
+	}
+
+	if decoded.Type != original.Type {
+		t.Errorf("type: got %q, want %q", decoded.Type, original.Type)
+	}
+	if decoded.Text != original.Text {
+		t.Errorf("text: got %q, want %q", decoded.Text, original.Text)
+	}
+	if string(decoded.Data) != string(original.Data) {
+		t.Errorf("data: got %q, want %q", string(decoded.Data), string(original.Data))
+	}
+}
+
+func TestRoundTripBase64NestedField(t *testing.T) {
+	original := nestedByteObj{
+		Type: "test",
+		Sub:  byteSubObj{Data: []byte(`{"nested":"value"}`)},
+	}
+
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	if err := enc.Encode(original, "sub.data:base64"); err != nil {
+		t.Fatal(err)
+	}
+
+	dec := NewDecoder(&buf)
+	var decoded nestedByteObj
+	if err := dec.Decode(&decoded, "sub.data:base64"); err != nil {
+		t.Fatal(err)
+	}
+
+	if string(decoded.Sub.Data) != string(original.Sub.Data) {
+		t.Errorf("sub.data: got %q, want %q", string(decoded.Sub.Data), string(original.Sub.Data))
+	}
+}
+
+func TestRoundTripBase64MultipleObjects(t *testing.T) {
+	type obj struct {
+		Type string `json:"type"`
+		Text string `json:"text,omitempty"`
+		Data []byte `json:"data,omitempty"`
+	}
+
+	objects := []obj{
+		{Type: "text-only", Text: "hello\n"},
+		{Type: "with-data", Data: []byte(`{"action":"search"}`)},
+		{Type: "both", Text: "response\n", Data: []byte(`{"result":42}`)},
+	}
+
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf)
+	for _, o := range objects {
+		if err := enc.Encode(o, "text", "data:base64"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	dec := NewDecoder(&buf)
+	for i, want := range objects {
+		var got obj
+		if err := dec.Decode(&got, "data:base64"); err != nil {
+			t.Fatalf("object %d: %v", i, err)
+		}
+		if got.Type != want.Type {
+			t.Errorf("object %d type: got %q, want %q", i, got.Type, want.Type)
+		}
+		if got.Text != want.Text {
+			t.Errorf("object %d text: got %q, want %q", i, got.Text, want.Text)
+		}
+		if string(got.Data) != string(want.Data) {
+			t.Errorf("object %d data: got %q, want %q", i, string(got.Data), string(want.Data))
+		}
 	}
 }

@@ -40,7 +40,7 @@ func (s *FileSerializer) Serialize(meta SessionMeta, history []prompt.Prompt) er
 	}
 
 	for _, p := range history {
-		if err := e.Encode(p, "text", "tool_response.content"); err != nil {
+		if err := e.Encode(p, "text", "tool_response.content", "tool_call.arguments:base64"); err != nil {
 			return err
 		}
 	}
@@ -65,7 +65,7 @@ func (s *FileSerializer) Load() (meta SessionMeta, history []prompt.Prompt, foun
 	}
 	for {
 		var p prompt.Prompt
-		if err := d.Decode(&p); err != nil {
+		if err := d.Decode(&p, "tool_call.arguments:base64"); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}

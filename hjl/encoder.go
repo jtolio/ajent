@@ -1,6 +1,7 @@
 package hjl
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,7 +37,15 @@ func (e *Encoder) Encode(v any, heredocFields ...string) error {
 
 	heredocs := map[string]string{}
 
-	for _, field := range heredocFields {
+	for _, spec := range heredocFields {
+		field, encoding := spec, ""
+		if i := strings.LastIndex(spec, ":"); i >= 0 {
+			if spec[i+1:] == "base64" {
+				encoding = "base64"
+				field = spec[:i]
+			}
+		}
+
 		parts := strings.Split(field, ".")
 		obj := intermediate
 
@@ -51,10 +60,16 @@ func (e *Encoder) Encode(v any, heredocFields ...string) error {
 		}
 
 		if len(parts) == 1 {
-			// we found it, set it in the heredocs map and delete
-			// it from the intermediate.
 			if val, ok := obj[parts[0]].(string); ok {
-				heredocs[field] = val
+				content := val
+				if encoding == "base64" {
+					decoded, err := base64.StdEncoding.DecodeString(val)
+					if err != nil {
+						continue
+					}
+					content = string(decoded)
+				}
+				heredocs[field] = content
 				delete(obj, parts[0])
 			}
 		}

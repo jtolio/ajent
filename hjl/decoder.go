@@ -1,6 +1,7 @@
 package hjl
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,8 +41,19 @@ func (d *Decoder) readLine() (string, error) {
 }
 
 // Decode will pull the next object off the stream, and use encoding/json's
-// rules for writing the data to v.
-func (d *Decoder) Decode(v any) error {
+// rules for writing the data to v. Optional fieldOverrides specify
+// field-level encoding transformations (e.g. "field.path:base64" will
+// base64-encode heredoc content before setting it in the decoded object).
+func (d *Decoder) Decode(v any, fieldOverrides ...string) error {
+	overrides := map[string]string{}
+	for _, spec := range fieldOverrides {
+		if i := strings.LastIndex(spec, ":"); i >= 0 {
+			if spec[i+1:] == "base64" {
+				overrides[spec[:i]] = "base64"
+			}
+		}
+	}
+
 	line, err := d.readLine()
 	if err != nil {
 		return err
@@ -64,7 +76,7 @@ func (d *Decoder) Decode(v any) error {
 			d.next = &line
 			break
 		}
-		if err := d.readField(intermediate, line); err != nil {
+		if err := d.readField(intermediate, line, overrides); err != nil {
 			return err
 		}
 	}
@@ -78,7 +90,7 @@ func (d *Decoder) Decode(v any) error {
 	return json.Unmarshal(encoded, v)
 }
 
-func (d *Decoder) readField(m map[string]any, header string) error {
+func (d *Decoder) readField(m map[string]any, header string, overrides map[string]string) error {
 	parts := strings.SplitN(header[1:], "=", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid field line: %s", header)
@@ -97,7 +109,11 @@ func (d *Decoder) readField(m map[string]any, header string) error {
 		}
 		buf.WriteString(line)
 		if s := buf.String(); strings.HasSuffix(s, sep+"\n") {
-			return d.setField(m, field, s[:len(s)-len(sep)-1])
+			val := s[:len(s)-len(sep)-1]
+			if overrides[field] == "base64" {
+				val = base64.StdEncoding.EncodeToString([]byte(val))
+			}
+			return d.setField(m, field, val)
 		}
 	}
 }
