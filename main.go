@@ -36,7 +36,7 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [flags] <session.aml>\n", os.Args[0])
+	fmt.Fprintf(os.Stderr, "Usage: %s [flags] <session.hjl>\n", os.Args[0])
 	flag.PrintDefaults()
 	os.Exit(1)
 }
