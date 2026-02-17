@@ -42,7 +42,13 @@ func usage() {
 }
 
 func buildTools(braveAPIKey string) []tools.Tool {
-	t := []tools.Tool{webFetchTool}
+	t := []tools.Tool{
+		webFetchTool,
+		readFileTool,
+		listDirTool,
+		editFileTool,
+		bashTool,
+	}
 	if braveAPIKey != "" {
 		t = append(t, newWebSearchTool(braveAPIKey))
 	}

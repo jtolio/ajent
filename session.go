@@ -147,6 +147,7 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 
 			for _, call := range resp.Tools {
+				fmt.Fprintf(s.output, "[%s %s]\n", call.Name, string(call.Argument))
 				if err := addToHistory(
 					prompt.AsToolCall(call.ID, call.Name, call.Argument),
 					prompt.AsToolResponse(call.ID, call.Name, s.addTimestamp(s.callTool(ctx, call))),
