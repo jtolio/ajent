@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jtolio/ajent/private"
 	"github.com/modfin/bellman/models/gen"
 	"github.com/modfin/bellman/prompt"
 	"github.com/modfin/bellman/tools"
@@ -27,7 +28,7 @@ type Config struct {
 
 type Session struct {
 	gen     *gen.Generator
-	input   *UnbufferedLineReader
+	input   *private.UnbufferedLineReader
 	output  io.Writer
 	cfg     Config
 	history []prompt.Prompt
@@ -65,7 +66,7 @@ func NewSession(client gen.Gen, model string,
 
 	return &Session{
 		gen:     client.Generator(opts...),
-		input:   NewUnbufferedLineReader(input, maxUserLineLength),
+		input:   private.NewUnbufferedLineReader(input, maxUserLineLength),
 		output:  output,
 		cfg:     cfg,
 		history: initialHistory,

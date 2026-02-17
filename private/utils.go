@@ -1,4 +1,4 @@
-package main
+package private
 
 import (
 	"errors"
@@ -17,6 +17,7 @@ func NewUnbufferedLineReader(r io.Reader, maxLength int) *UnbufferedLineReader {
 	}
 }
 
+// ReadLine returns either a valid string or an error, never both.
 func (r *UnbufferedLineReader) ReadLine() (rv string, err error) {
 	if r.r == nil {
 		return "", io.EOF
@@ -37,7 +38,7 @@ func (r *UnbufferedLineReader) ReadLine() (rv string, err error) {
 			return "", err
 		}
 		out = append(out, b[0])
-		if len(out) > r.maxLength {
+		if r.maxLength > 0 && len(out) > r.maxLength {
 			return "", errors.New("max line length exceeded")
 		}
 		if b[0] == '\n' {

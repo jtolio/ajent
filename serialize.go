@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/jtolio/ajent/hjl"
 	"github.com/modfin/bellman/prompt"
 )
 
@@ -32,14 +33,14 @@ func (s *FileSerializer) Serialize(meta SessionMeta, history []prompt.Prompt) er
 	}
 	defer fh.Close()
 
-	e := NewEncoder(fh)
+	e := hjl.NewEncoder(fh)
 
-	if err := e.Encode(meta); err != nil {
+	if err := e.Encode(meta, "system_prompt"); err != nil {
 		return err
 	}
 
 	for _, p := range history {
-		if err := e.Encode(p); err != nil {
+		if err := e.Encode(p, "text", "tool_response.content"); err != nil {
 			return err
 		}
 	}
@@ -57,7 +58,7 @@ func (s *FileSerializer) Load() (meta SessionMeta, history []prompt.Prompt, foun
 	}
 	defer fh.Close()
 
-	d := NewDecoder(fh)
+	d := hjl.NewDecoder(fh)
 
 	if err := d.Decode(&meta); err != nil {
 		return SessionMeta{}, nil, true, err
