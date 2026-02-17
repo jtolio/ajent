@@ -14,8 +14,12 @@ type SessionMeta struct {
 }
 
 type Serializer interface {
-	Serialize(meta SessionMeta, history []prompt.Prompt) error
-	Load() (meta SessionMeta, history []prompt.Prompt, found bool, err error)
+	CreateOrOpen(meta SessionMeta) (SerializedSession, SessionMeta, []prompt.Prompt, error)
+}
+
+type SerializedSession interface {
+	Append(prompts ...prompt.Prompt) error
+	Close() error
 }
 
 type FileSerializer struct {
@@ -26,52 +30,73 @@ func NewFileSerializer(path string) *FileSerializer {
 	return &FileSerializer{path: path}
 }
 
-func (s *FileSerializer) Serialize(meta SessionMeta, history []prompt.Prompt) error {
-	fh, err := os.Create(s.path)
-	if err != nil {
-		return err
-	}
-	defer fh.Close()
-
-	e := hjl.NewEncoder(fh)
-
-	if err := e.Encode(meta, "system_prompt"); err != nil {
-		return err
-	}
-
-	for _, p := range history {
-		if err := e.Encode(p, "text", "tool_response.content", "tool_call.arguments:base64"); err != nil {
-			return err
-		}
-	}
-
-	return fh.Close()
-}
-
-func (s *FileSerializer) Load() (meta SessionMeta, history []prompt.Prompt, found bool, err error) {
+func (s *FileSerializer) CreateOrOpen(meta SessionMeta) (SerializedSession, SessionMeta, []prompt.Prompt, error) {
 	fh, err := os.Open(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return SessionMeta{}, nil, false, nil
+			return s.create(meta)
 		}
-		return SessionMeta{}, nil, false, err
+		return nil, SessionMeta{}, nil, err
 	}
 	defer fh.Close()
 
 	d := hjl.NewDecoder(fh)
 
-	if err := d.Decode(&meta); err != nil {
-		return SessionMeta{}, nil, true, err
+	var fileMeta SessionMeta
+	if err := d.Decode(&fileMeta); err != nil {
+		return nil, SessionMeta{}, nil, err
 	}
+	var history []prompt.Prompt
 	for {
 		var p prompt.Prompt
 		if err := d.Decode(&p, "tool_call.arguments:base64"); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return SessionMeta{}, nil, true, err
+			return nil, SessionMeta{}, nil, err
 		}
 		history = append(history, p)
 	}
-	return meta, history, true, nil
+
+	// Reopen the file in append mode for future writes.
+	afh, err := os.OpenFile(s.path, os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, SessionMeta{}, nil, err
+	}
+
+	return &fileSession{fh: afh, enc: hjl.NewEncoder(afh)}, fileMeta, history, nil
+}
+
+func (s *FileSerializer) create(meta SessionMeta) (SerializedSession, SessionMeta, []prompt.Prompt, error) {
+	fh, err := os.Create(s.path)
+	if err != nil {
+		return nil, SessionMeta{}, nil, err
+	}
+	enc := hjl.NewEncoder(fh)
+	if err := enc.Encode(meta, "system_prompt"); err != nil {
+		fh.Close()
+		return nil, SessionMeta{}, nil, err
+	}
+	return &fileSession{fh: fh, enc: enc}, meta, nil, nil
+}
+
+type fileSession struct {
+	fh  *os.File
+	enc *hjl.Encoder
+}
+
+func (s *fileSession) Append(prompts ...prompt.Prompt) error {
+	for _, p := range prompts {
+		if err := s.enc.Encode(p, "text", "tool_response.content", "tool_call.arguments:base64"); err != nil {
+			return err
+		}
+	}
+	return s.fh.Sync()
+}
+
+func (s *fileSession) Close() error {
+	if s.fh != nil {
+		return s.fh.Close()
+	}
+	return nil
 }

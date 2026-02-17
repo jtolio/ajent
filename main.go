@@ -102,8 +102,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	err = session.Run(ctx)
-	if err != nil {
+	defer session.Close()
+	if err := session.Run(ctx); err != nil {
 		panic(err)
 	}
 }

@@ -27,12 +27,12 @@ type Config struct {
 }
 
 type Session struct {
-	gen     *gen.Generator
-	input   *private.UnbufferedLineReader
-	output  io.Writer
-	cfg     Config
-	history []prompt.Prompt
-	meta    SessionMeta
+	gen        *gen.Generator
+	input      *private.UnbufferedLineReader
+	output     io.Writer
+	cfg        Config
+	history    []prompt.Prompt
+	serialized SerializedSession
 }
 
 func NewSession(client gen.Gen, model string,
@@ -48,16 +48,17 @@ func NewSession(client gen.Gen, model string,
 		opts = append(opts, gen.WithTools(cfg.Tools...))
 	}
 
-	var initialHistory []prompt.Prompt
+	var history []prompt.Prompt
+	var serialized SerializedSession
 	if cfg.Serializer != nil {
-		meta, history, found, err := cfg.Serializer.Load()
+		s, meta, loaded, err := cfg.Serializer.CreateOrOpen(
+			SessionMeta{SystemPrompt: cfg.SystemPrompt})
 		if err != nil {
 			return nil, err
 		}
-		if found {
-			cfg.SystemPrompt = meta.SystemPrompt
-			initialHistory = history
-		}
+		serialized = s
+		cfg.SystemPrompt = meta.SystemPrompt
+		history = loaded
 	}
 
 	if cfg.SystemPrompt != "" {
@@ -65,13 +66,20 @@ func NewSession(client gen.Gen, model string,
 	}
 
 	return &Session{
-		gen:     client.Generator(opts...),
-		input:   private.NewUnbufferedLineReader(input, maxUserLineLength),
-		output:  output,
-		cfg:     cfg,
-		history: initialHistory,
-		meta:    SessionMeta{SystemPrompt: cfg.SystemPrompt},
+		gen:        client.Generator(opts...),
+		input:      private.NewUnbufferedLineReader(input, maxUserLineLength),
+		output:     output,
+		cfg:        cfg,
+		history:    history,
+		serialized: serialized,
 	}, nil
+}
+
+func (s *Session) Close() error {
+	if s.serialized != nil {
+		return s.serialized.Close()
+	}
+	return nil
 }
 
 func (s *Session) getUserInput(ctx context.Context) (string, error) {
@@ -116,8 +124,8 @@ func (s *Session) callTool(ctx context.Context, call tools.Call) string {
 func (s *Session) Run(ctx context.Context) error {
 	addToHistory := func(p ...prompt.Prompt) error {
 		s.history = append(s.history, p...)
-		if s.cfg.Serializer != nil {
-			return s.cfg.Serializer.Serialize(s.meta, s.history)
+		if s.serialized != nil {
+			return s.serialized.Append(p...)
 		}
 		return nil
 	}
