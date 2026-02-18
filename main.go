@@ -10,7 +10,7 @@ import (
 	"github.com/modfin/bellman/models/gen"
 	"github.com/modfin/bellman/services/anthropic"
 	"github.com/modfin/bellman/services/ollama"
-	"github.com/jtolio/ajent/providers"
+	"github.com/modfin/bellman/services/openai"
 	"github.com/modfin/bellman/services/vertexai"
 	"github.com/modfin/bellman/tools"
 
@@ -76,11 +76,11 @@ func main() {
 	case "ollama":
 		client = ollama.New(*flagURL)
 	case "openai":
-		var err error
-		client, err = providers.NewOpenAICompat(*flagAPIKey, *flagURL, *flagModel)
-		if err != nil {
-			panic(err)
+		c := openai.New(*flagAPIKey)
+		if *flagURL != "" {
+			c.SetBaseURL(*flagURL)
 		}
+		client = c
 	case "vertexai":
 		var err error
 		client, err = vertexai.New(vertexai.GoogleConfig{
