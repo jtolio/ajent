@@ -57,8 +57,6 @@ func TestHashLineContent_TwoCharHex(t *testing.T) {
 }
 
 func TestHashLineContent_DifferentInputs(t *testing.T) {
-	// Different inputs should usually produce different hashes
-	// (not guaranteed with 8-bit hash, but these specific strings should differ)
 	h1 := hashLineContent("hello")
 	h2 := hashLineContent("world")
 	if h1 == h2 {
@@ -168,7 +166,6 @@ func TestFormatHashlines_WithOffset(t *testing.T) {
 	lines := []string{"third", "fourth"}
 	result := formatHashlines(lines, 2)
 
-	// Should start at line 3 (offset 2 + 1)
 	if !strings.HasPrefix(result, "3:") {
 		t.Errorf("expected to start with '3:', got %q", result[:10])
 	}
@@ -268,8 +265,8 @@ func TestReadFileTool_BasicFile(t *testing.T) {
 
 	result := callTool(t, ReadFileTool, readFileArgs{Path: path})
 
-	if !strings.Contains(result, "[page 1/1") {
-		t.Errorf("expected page header, got: %s", result)
+	if !strings.Contains(result, "[lines 1-2 of 2]") {
+		t.Errorf("expected line range header, got: %s", result)
 	}
 	if !strings.Contains(result, "|hello") {
 		t.Errorf("expected 'hello' in output, got: %s", result)
@@ -290,47 +287,51 @@ func TestReadFileTool_EmptyFile(t *testing.T) {
 	}
 }
 
-func TestReadFileTool_Pagination(t *testing.T) {
+func TestReadFileTool_LineRange(t *testing.T) {
 	dir := t.TempDir()
 	var sb strings.Builder
 	for i := 0; i < 250; i++ {
-		sb.WriteString("line\n")
+		fmt.Fprintf(&sb, "line %d\n", i+1)
 	}
 	path := writeTestFile(t, dir, "test.txt", sb.String())
 
-	// Page 1
-	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 1})
-	if !strings.Contains(result, "[page 1/3") {
-		t.Errorf("expected page 1/3, got: %s", strings.SplitN(result, "\n", 2)[0])
-	}
-	if !strings.Contains(result, "lines 1-100 of 250") {
-		t.Errorf("expected 'lines 1-100 of 250', got: %s", strings.SplitN(result, "\n", 2)[0])
+	// Default: first 200 lines
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path})
+	if !strings.Contains(result, "[lines 1-200 of 250]") {
+		t.Errorf("expected [lines 1-200 of 250], got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 
-	// Page 3
-	result = callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 3})
-	if !strings.Contains(result, "[page 3/3") {
-		t.Errorf("expected page 3/3, got: %s", strings.SplitN(result, "\n", 2)[0])
-	}
-	if !strings.Contains(result, "lines 201-250 of 250") {
-		t.Errorf("expected 'lines 201-250 of 250', got: %s", strings.SplitN(result, "\n", 2)[0])
+	// Specific range
+	result = callTool(t, ReadFileTool, readFileArgs{Path: path, StartLine: 201, EndLine: 250})
+	if !strings.Contains(result, "[lines 201-250 of 250]") {
+		t.Errorf("expected [lines 201-250 of 250], got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 
-	// Page out of range
-	result = callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 4})
-	if !strings.Contains(result, "error:") {
-		t.Errorf("expected error for page 4, got: %s", result)
+	// Cap at 200 lines
+	result = callTool(t, ReadFileTool, readFileArgs{Path: path, StartLine: 1, EndLine: 250})
+	if !strings.Contains(result, "[lines 1-200 of 250]") {
+		t.Errorf("expected capped at 200 lines, got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 }
 
-func TestReadFileTool_DefaultPage(t *testing.T) {
+func TestReadFileTool_StartLineBeyondFile(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "hello\nworld\n")
+
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, StartLine: 100})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for start_line beyond file, got: %s", result)
+	}
+}
+
+func TestReadFileTool_SmallFile(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "test.txt", "hello\n")
 
-	// Page 0 should default to page 1
-	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 0})
-	if !strings.Contains(result, "[page 1/1") {
-		t.Errorf("expected page 1, got: %s", result)
+	// File with <= 200 lines and no params: return entire file
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path})
+	if !strings.Contains(result, "[lines 1-1 of 1]") {
+		t.Errorf("expected [lines 1-1 of 1], got: %s", result)
 	}
 }
 
@@ -354,7 +355,6 @@ func TestReadFileTool_HashlineFormat(t *testing.T) {
 
 	result := callTool(t, ReadFileTool, readFileArgs{Path: path})
 
-	// Check each hashline has the right format: linenum:hash|content
 	lines := strings.Split(strings.TrimSpace(result), "\n")
 	for _, line := range lines[1:] { // skip header
 		parts := strings.SplitN(line, "|", 2)
@@ -367,6 +367,16 @@ func TestReadFileTool_HashlineFormat(t *testing.T) {
 		if len(colonParts) != 2 {
 			t.Errorf("expected colon in hashline ref, got: %s", ref)
 		}
+	}
+}
+
+func TestReadFileTool_EndLineClampedToFile(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "a\nb\nc\n")
+
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, StartLine: 2, EndLine: 100})
+	if !strings.Contains(result, "[lines 2-3 of 3]") {
+		t.Errorf("expected end_line clamped, got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 }
 
@@ -402,29 +412,52 @@ func TestListDirTool_NonexistentDir(t *testing.T) {
 	}
 }
 
-func TestListDirTool_Pagination(t *testing.T) {
+func TestListDirTool_OffsetLimit(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < 150; i++ {
+	for i := 0; i < 300; i++ {
 		writeTestFile(t, dir, fmt.Sprintf("file_%04d.txt", i), "")
 	}
 
-	// Verify there are at least 150 entries
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) < 150 {
-		t.Fatalf("expected at least 150 entries, got %d", len(entries))
+	// Default: first 200 entries
+	result := callTool(t, ListDirTool, listDirArgs{Path: dir})
+	if !strings.Contains(result, "[entries 1-200 of 300]") {
+		t.Errorf("expected [entries 1-200 of 300], got first line: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 
-	result := callTool(t, ListDirTool, listDirArgs{Path: dir, Page: 1})
-	if !strings.Contains(result, "[page 1/2") {
-		t.Errorf("expected page 1/2, got first line: %s", strings.SplitN(result, "\n", 2)[0])
+	// Offset 201
+	result = callTool(t, ListDirTool, listDirArgs{Path: dir, Offset: 201})
+	if !strings.Contains(result, "[entries 201-300 of 300]") {
+		t.Errorf("expected [entries 201-300 of 300], got first line: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 
-	result = callTool(t, ListDirTool, listDirArgs{Path: dir, Page: 2})
-	if !strings.Contains(result, "[page 2/2") {
-		t.Errorf("expected page 2/2, got first line: %s", strings.SplitN(result, "\n", 2)[0])
+	// Custom limit
+	result = callTool(t, ListDirTool, listDirArgs{Path: dir, Offset: 1, Limit: 50})
+	if !strings.Contains(result, "[entries 1-50 of 300]") {
+		t.Errorf("expected [entries 1-50 of 300], got first line: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+}
+
+func TestListDirTool_OffsetBeyondEntries(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "a.txt", "")
+
+	result := callTool(t, ListDirTool, listDirArgs{Path: dir, Offset: 100})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for offset beyond entries, got: %s", result)
+	}
+}
+
+func TestListDirTool_LimitCapped(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 10; i++ {
+		writeTestFile(t, dir, fmt.Sprintf("f%d.txt", i), "")
+	}
+
+	// Limit > 500 should be capped to 500
+	result := callTool(t, ListDirTool, listDirArgs{Path: dir, Limit: 1000})
+	// Should still work, just returns all 10 entries
+	if !strings.Contains(result, "[entries 1-10 of 10]") {
+		t.Errorf("expected all entries returned, got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 }
 
@@ -434,7 +467,6 @@ func TestListDirTool_ShowsPermissions(t *testing.T) {
 
 	result := callTool(t, ListDirTool, listDirArgs{Path: dir})
 
-	// Should contain permission string like "-rw-"
 	if !strings.Contains(result, "rw") {
 		t.Errorf("expected permissions in output, got: %s", result)
 	}
@@ -588,6 +620,13 @@ func TestEditFileTool_HashMismatch(t *testing.T) {
 	if !strings.Contains(result, "hash mismatch") {
 		t.Errorf("expected hash mismatch error, got: %s", result)
 	}
+	// Should include context lines
+	if !strings.Contains(result, "Current content around line") {
+		t.Errorf("expected context in error, got: %s", result)
+	}
+	if !strings.Contains(result, "|hello") {
+		t.Errorf("expected actual line content in error, got: %s", result)
+	}
 
 	// File should be unchanged
 	data, err := os.ReadFile(path)
@@ -613,6 +652,13 @@ func TestEditFileTool_LineOutOfBounds(t *testing.T) {
 
 	if !strings.Contains(result, "does not exist") {
 		t.Errorf("expected 'does not exist' error, got: %s", result)
+	}
+	// Should include end-of-file context
+	if !strings.Contains(result, "End of file:") {
+		t.Errorf("expected end-of-file context in error, got: %s", result)
+	}
+	if !strings.Contains(result, "|hello") {
+		t.Errorf("expected file content in error, got: %s", result)
 	}
 }
 
@@ -743,14 +789,12 @@ func TestBashTool_MissingCommand(t *testing.T) {
 }
 
 func TestBashTool_OutputTruncation(t *testing.T) {
-	// Generate output larger than bashMaxOutput
 	result := callTool(t, BashTool, bashArgs{
 		Command: "yes 'this is a long line of text for testing truncation' | head -n 100000",
 	})
 	if !strings.Contains(result, "... (output truncated)") {
 		t.Error("expected truncation notice in output")
 	}
-	// Should contain the tail (last lines)
 	if !strings.Contains(result, "this is a long line") {
 		t.Error("expected tail content to be preserved")
 	}
@@ -760,71 +804,6 @@ func TestBashTool_MultilineOutput(t *testing.T) {
 	result := callTool(t, BashTool, bashArgs{Command: "echo line1; echo line2; echo line3"})
 	if !strings.Contains(result, "line1") || !strings.Contains(result, "line3") {
 		t.Errorf("expected multiline output, got: %s", result)
-	}
-}
-
-// --- read_file line parameter tests ---
-
-func TestReadFileTool_LineParam(t *testing.T) {
-	dir := t.TempDir()
-	var sb strings.Builder
-	for i := 0; i < 250; i++ {
-		fmt.Fprintf(&sb, "line %d\n", i+1)
-	}
-	path := writeTestFile(t, dir, "test.txt", sb.String())
-
-	// Line 150 should be on page 2 (lines 101-200)
-	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Line: 150})
-	if !strings.Contains(result, "[page 2/3") {
-		t.Errorf("expected page 2/3, got: %s", strings.SplitN(result, "\n", 2)[0])
-	}
-	if !strings.Contains(result, "lines 101-200 of 250") {
-		t.Errorf("expected 'lines 101-200 of 250', got: %s", strings.SplitN(result, "\n", 2)[0])
-	}
-}
-
-func TestReadFileTool_LineParamFirstPage(t *testing.T) {
-	dir := t.TempDir()
-	var sb strings.Builder
-	for i := 0; i < 250; i++ {
-		fmt.Fprintf(&sb, "line %d\n", i+1)
-	}
-	path := writeTestFile(t, dir, "test.txt", sb.String())
-
-	// Line 1 should be on page 1
-	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Line: 1})
-	if !strings.Contains(result, "[page 1/3") {
-		t.Errorf("expected page 1/3, got: %s", strings.SplitN(result, "\n", 2)[0])
-	}
-}
-
-func TestReadFileTool_LineParamLastPage(t *testing.T) {
-	dir := t.TempDir()
-	var sb strings.Builder
-	for i := 0; i < 250; i++ {
-		fmt.Fprintf(&sb, "line %d\n", i+1)
-	}
-	path := writeTestFile(t, dir, "test.txt", sb.String())
-
-	// Line 250 should be on page 3
-	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Line: 250})
-	if !strings.Contains(result, "[page 3/3") {
-		t.Errorf("expected page 3/3, got: %s", strings.SplitN(result, "\n", 2)[0])
-	}
-}
-
-func TestReadFileTool_LineOverridesPage(t *testing.T) {
-	dir := t.TempDir()
-	var sb strings.Builder
-	for i := 0; i < 250; i++ {
-		fmt.Fprintf(&sb, "line %d\n", i+1)
-	}
-	path := writeTestFile(t, dir, "test.txt", sb.String())
-
-	// Line 150 (page 2) should override page 1
-	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 1, Line: 150})
-	if !strings.Contains(result, "[page 2/3") {
-		t.Errorf("expected line to override page, got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 }
 
@@ -921,7 +900,7 @@ func TestGrepFileTool_NoMatches(t *testing.T) {
 	}
 }
 
-func TestGrepFileTool_PageAnnotation(t *testing.T) {
+func TestGrepFileTool_NoPageAnnotation(t *testing.T) {
 	dir := t.TempDir()
 	var sb strings.Builder
 	for i := 0; i < 150; i++ {
@@ -929,10 +908,87 @@ func TestGrepFileTool_PageAnnotation(t *testing.T) {
 	}
 	path := writeTestFile(t, dir, "test.txt", sb.String())
 
-	// Search for "line 150" which is on page 2
 	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "line 150"})
-	if !strings.Contains(result, "[page 2]") {
-		t.Errorf("expected [page 2] annotation, got: %s", result)
+	// Should NOT contain page annotations
+	if strings.Contains(result, "[page") {
+		t.Errorf("expected no page annotations, got: %s", result)
+	}
+	if !strings.Contains(result, "1 match") {
+		t.Errorf("expected 1 match, got: %s", result)
+	}
+}
+
+func TestGrepFileTool_ContextLines(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "aaa\nbbb\nccc\nddd\neee\n")
+
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "ccc", ContextLines: 1})
+	if !strings.Contains(result, "1 match") {
+		t.Errorf("expected 1 match, got: %s", result)
+	}
+	// Match line should be prefixed with "> "
+	if !strings.Contains(result, "> ") {
+		t.Errorf("expected '> ' prefix for match line, got: %s", result)
+	}
+	// Context lines should be prefixed with "  "
+	if !strings.Contains(result, "  2:") {
+		t.Errorf("expected context line for bbb (line 2), got: %s", result)
+	}
+	if !strings.Contains(result, "  4:") {
+		t.Errorf("expected context line for ddd (line 4), got: %s", result)
+	}
+}
+
+func TestGrepFileTool_ContextLinesMerge(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "aaa\nbbb\nccc\nddd\neee\n")
+
+	// Both bbb (line 2) and ddd (line 4) match, with context 1 their windows overlap
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "b\n", ContextLines: 1})
+	// This specific query only matches "bbb" since we look for "b\n" substring within a line
+	// Let me use a better query
+	result = callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "bb", ContextLines: 2})
+	// bbb is at line 2, context 2 means lines 1-4
+	if !strings.Contains(result, "> ") {
+		t.Errorf("expected match prefix, got: %s", result)
+	}
+}
+
+func TestGrepFileTool_ContextMergeAdjacentMatches(t *testing.T) {
+	dir := t.TempDir()
+	// Lines where match1 context and match2 context overlap
+	path := writeTestFile(t, dir, "test.txt", "x1\nmatch1\nx2\nmatch2\nx3\n")
+
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "match", ContextLines: 1})
+	if !strings.Contains(result, "2 matches") {
+		t.Errorf("expected 2 matches, got: %s", result)
+	}
+	// Both matches and their context should be in one merged group (no blank line separator)
+	lines := strings.Split(strings.TrimSpace(result), "\n")
+	blankCount := 0
+	for _, l := range lines[1:] { // skip "2 matches:" header
+		if l == "" {
+			blankCount++
+		}
+	}
+	if blankCount > 0 {
+		t.Errorf("expected merged group (no blank separators), got %d blank lines", blankCount)
+	}
+}
+
+func TestGrepFileTool_ContextSeparateGroups(t *testing.T) {
+	dir := t.TempDir()
+	// Matches far enough apart that context windows don't overlap
+	path := writeTestFile(t, dir, "test.txt", "match1\na\nb\nc\nd\ne\nf\nmatch2\n")
+
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "match", ContextLines: 1})
+	if !strings.Contains(result, "2 matches") {
+		t.Errorf("expected 2 matches, got: %s", result)
+	}
+	// Should have a blank line between non-contiguous groups
+	parts := strings.Split(result, "\n\n")
+	if len(parts) < 2 {
+		t.Errorf("expected separate groups with blank line, got: %s", result)
 	}
 }
 
@@ -1051,20 +1107,41 @@ func TestTreeTool_DepthLimit(t *testing.T) {
 	}
 }
 
-func TestTreeTool_Pagination(t *testing.T) {
+func TestTreeTool_OffsetLimit(t *testing.T) {
 	dir := t.TempDir()
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 250; i++ {
 		writeTestFile(t, dir, fmt.Sprintf("file_%04d.txt", i), "")
 	}
 
-	result := callTool(t, TreeTool, treeArgs{Path: dir, Page: 1})
-	if !strings.Contains(result, "[page 1/2") {
-		t.Errorf("expected page 1/2, got: %s", strings.SplitN(result, "\n", 2)[0])
+	// Default: first 200 lines
+	result := callTool(t, TreeTool, treeArgs{Path: dir})
+	header := strings.SplitN(result, "\n", 2)[0]
+	if !strings.Contains(header, "[lines 1-200 of") {
+		t.Errorf("expected [lines 1-200 of ...], got: %s", header)
 	}
 
-	result = callTool(t, TreeTool, treeArgs{Path: dir, Page: 2})
-	if !strings.Contains(result, "[page 2/2") {
-		t.Errorf("expected page 2/2, got: %s", strings.SplitN(result, "\n", 2)[0])
+	// Offset beyond first page
+	result = callTool(t, TreeTool, treeArgs{Path: dir, Offset: 201})
+	header = strings.SplitN(result, "\n", 2)[0]
+	if !strings.Contains(header, "[lines 201-") {
+		t.Errorf("expected [lines 201-...], got: %s", header)
+	}
+
+	// Custom limit
+	result = callTool(t, TreeTool, treeArgs{Path: dir, Offset: 1, Limit: 50})
+	header = strings.SplitN(result, "\n", 2)[0]
+	if !strings.Contains(header, "[lines 1-50 of") {
+		t.Errorf("expected [lines 1-50 of ...], got: %s", header)
+	}
+}
+
+func TestTreeTool_OffsetBeyondLines(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "a.txt", "")
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir, Offset: 100})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for offset beyond lines, got: %s", result)
 	}
 }
 
@@ -1081,9 +1158,135 @@ func TestTreeTool_TreeFormat(t *testing.T) {
 	writeTestFile(t, dir, "file1.txt", "")
 
 	result := callTool(t, TreeTool, treeArgs{Path: dir})
-	// Should contain tree drawing characters
 	if !strings.Contains(result, "├── ") && !strings.Contains(result, "└── ") {
 		t.Errorf("expected tree connectors in output, got: %s", result)
+	}
+}
+
+// --- find_replace tool tests ---
+
+func TestFindReplaceTool_Basic(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "hello world\nfoo bar\n")
+
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		Path:    path,
+		OldText: "foo bar",
+		NewText: "baz qux",
+	})
+	if !strings.Contains(result, "ok: replaced") {
+		t.Fatalf("expected ok, got: %s", result)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "hello world\nbaz qux\n" {
+		t.Errorf("unexpected file content: %q", string(data))
+	}
+}
+
+func TestFindReplaceTool_MultiLine(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "aaa\nbbb\nccc\nddd\n")
+
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		Path:    path,
+		OldText: "bbb\nccc",
+		NewText: "xxx\nyyy\nzzz",
+	})
+	if !strings.Contains(result, "ok: replaced") {
+		t.Fatalf("expected ok, got: %s", result)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "aaa\nxxx\nyyy\nzzz\nddd\n" {
+		t.Errorf("unexpected file content: %q", string(data))
+	}
+}
+
+func TestFindReplaceTool_Delete(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "keep\ndelete_me\nkeep2\n")
+
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		Path:    path,
+		OldText: "delete_me\n",
+		NewText: "",
+	})
+	if !strings.Contains(result, "ok: replaced") {
+		t.Fatalf("expected ok, got: %s", result)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "keep\nkeep2\n" {
+		t.Errorf("unexpected file content: %q", string(data))
+	}
+}
+
+func TestFindReplaceTool_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "hello world\n")
+
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		Path:    path,
+		OldText: "nonexistent",
+		NewText: "replacement",
+	})
+	if !strings.Contains(result, "error: old_text not found") {
+		t.Errorf("expected not-found error, got: %s", result)
+	}
+}
+
+func TestFindReplaceTool_MultipleOccurrences(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "aaa\nbbb\naaa\n")
+
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		Path:    path,
+		OldText: "aaa",
+		NewText: "xxx",
+	})
+	if !strings.Contains(result, "found 2 occurrences") {
+		t.Errorf("expected multiple-occurrence error, got: %s", result)
+	}
+	if !strings.Contains(result, "more surrounding context") {
+		t.Errorf("expected context hint in error, got: %s", result)
+	}
+
+	// File should be unchanged
+	data, _ := os.ReadFile(path)
+	if string(data) != "aaa\nbbb\naaa\n" {
+		t.Errorf("file should be unchanged, got: %q", string(data))
+	}
+}
+
+func TestFindReplaceTool_MissingPath(t *testing.T) {
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		OldText: "x",
+		NewText: "y",
+	})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for missing path, got: %s", result)
+	}
+}
+
+func TestFindReplaceTool_MissingOldText(t *testing.T) {
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		Path:    "/tmp/x",
+		NewText: "y",
+	})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for missing old_text, got: %s", result)
+	}
+}
+
+func TestFindReplaceTool_NonexistentFile(t *testing.T) {
+	result := callTool(t, FindReplaceTool, findReplaceArgs{
+		Path:    "/nonexistent/file.txt",
+		OldText: "x",
+		NewText: "y",
+	})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error, got: %s", result)
 	}
 }
 

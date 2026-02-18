@@ -12,13 +12,12 @@ import (
 	"github.com/modfin/bellman/tools"
 )
 
-const treeLinesPerPage = 100
-
 type treeArgs struct {
 	Path       string `json:"path,omitempty" json-description:"The directory path. Defaults to current directory."`
 	Depth      int    `json:"depth,omitempty" json-description:"Maximum depth to traverse. Defaults to 3."`
 	ShowHidden bool   `json:"show_hidden,omitempty" json-description:"If true, include hidden files/directories (names starting with dot). Defaults to false."`
-	Page       int    `json:"page,omitempty" json-description:"Page number (1-indexed). Defaults to 1."`
+	Offset     int    `json:"offset,omitempty" json-description:"1-indexed line number to start from (default 1)"`
+	Limit      int    `json:"limit,omitempty" json-description:"Maximum number of lines to return (default 200, max 500)"`
 }
 
 type treeEntry struct {
@@ -27,7 +26,7 @@ type treeEntry struct {
 }
 
 var TreeTool = tools.NewTool("tree",
-	tools.WithDescription("Display a directory tree structure. Paginated at 100 lines per page. Directories are listed before files at each level."),
+	tools.WithDescription("Display a directory tree structure. Directories are listed before files at each level. Use offset and limit to paginate (default 200 lines, max 500)."),
 	tools.WithArgSchema(treeArgs{}),
 	tools.WithFunction(func(ctx context.Context, call tools.Call) (string, error) {
 		var params treeArgs
@@ -40,8 +39,14 @@ var TreeTool = tools.NewTool("tree",
 		if params.Depth <= 0 {
 			params.Depth = 3
 		}
-		if params.Page < 1 {
-			params.Page = 1
+		if params.Offset < 1 {
+			params.Offset = 1
+		}
+		if params.Limit <= 0 {
+			params.Limit = 200
+		}
+		if params.Limit > 500 {
+			params.Limit = 500
 		}
 
 		info, err := os.Stat(params.Path)
@@ -57,20 +62,19 @@ var TreeTool = tools.NewTool("tree",
 		buildTree(&lines, params.Path, "", params.Depth, params.ShowHidden)
 
 		totalLines := len(lines)
-		totalPages := (totalLines + treeLinesPerPage - 1) / treeLinesPerPage
 
-		if params.Page > totalPages {
-			return fmt.Sprintf("error: page %d does not exist (tree has %d pages)", params.Page, totalPages), nil
+		if params.Offset > totalLines {
+			return fmt.Sprintf("error: offset %d is beyond the number of lines (%d)", params.Offset, totalLines), nil
 		}
 
-		startIdx := (params.Page - 1) * treeLinesPerPage
-		endIdx := startIdx + treeLinesPerPage
+		startIdx := params.Offset - 1
+		endIdx := startIdx + params.Limit
 		if endIdx > totalLines {
 			endIdx = totalLines
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "[page %d/%d, lines %d-%d of %d]\n", params.Page, totalPages, startIdx+1, endIdx, totalLines)
+		fmt.Fprintf(&sb, "[lines %d-%d of %d]\n", params.Offset, endIdx, totalLines)
 		for _, line := range lines[startIdx:endIdx] {
 			sb.WriteString(line)
 			sb.WriteByte('\n')

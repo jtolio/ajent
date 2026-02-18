@@ -8,14 +8,16 @@ import (
 	"github.com/modfin/bellman/tools"
 )
 
+const maxReadLines = 200
+
 type readFileArgs struct {
-	Path string `json:"path" json-description:"The path to the file to read"`
-	Page int    `json:"page,omitempty" json-description:"Page number (1-indexed). If omitted or 0, returns page 1."`
-	Line int    `json:"line,omitempty" json-description:"Jump to the page containing this line number (1-indexed). Takes precedence over page."`
+	Path      string `json:"path" json-description:"The path to the file to read"`
+	StartLine int    `json:"start_line,omitempty" json-description:"First line to return (1-indexed, default 1)"`
+	EndLine   int    `json:"end_line,omitempty" json-description:"Last line to return (1-indexed, inclusive, default start_line+199). Max 200 lines per call."`
 }
 
 var ReadFileTool = tools.NewTool("read_file",
-	tools.WithDescription("Read a file with hashline-prefixed lines. Returns one page at a time (100 lines per page). Each line is prefixed with its line number and a content hash in the format 'line:hash|content'. Use the line:hash references with the edit_file tool. Use the line parameter to jump directly to the page containing a specific line number."),
+	tools.WithDescription("Read a file with hashline-prefixed lines. Returns up to 200 lines per call. Each line is prefixed with its line number and a content hash in the format 'line:hash|content'. Use the line:hash references with the edit_file tool. Use start_line and end_line to read specific line ranges."),
 	tools.WithArgSchema(readFileArgs{}),
 	tools.WithFunction(func(ctx context.Context, call tools.Call) (string, error) {
 		var params readFileArgs
@@ -25,12 +27,6 @@ var ReadFileTool = tools.NewTool("read_file",
 		if params.Path == "" {
 			return "error: path is required", nil
 		}
-		if params.Line > 0 {
-			params.Page = (params.Line-1)/linesPerPage + 1
-		}
-		if params.Page < 1 {
-			params.Page = 1
-		}
 
 		lines, _, err := readFileLines(params.Path)
 		if err != nil {
@@ -39,25 +35,37 @@ var ReadFileTool = tools.NewTool("read_file",
 
 		totalLines := len(lines)
 		if totalLines == 0 {
-			return "[page 1/1, 0 lines]\n(empty file)", nil
+			return "[lines 0-0 of 0]\n(empty file)", nil
 		}
 
-		totalPages := (totalLines + linesPerPage - 1) / linesPerPage
-
-		if params.Page > totalPages {
-			return fmt.Sprintf("error: page %d does not exist (file has %d pages)", params.Page, totalPages), nil
+		// Defaults
+		if params.StartLine < 1 {
+			params.StartLine = 1
+		}
+		if params.EndLine < params.StartLine {
+			params.EndLine = params.StartLine + maxReadLines - 1
 		}
 
-		startIdx := (params.Page - 1) * linesPerPage
-		endIdx := startIdx + linesPerPage
-		if endIdx > totalLines {
-			endIdx = totalLines
+		// Cap range to maxReadLines
+		if params.EndLine-params.StartLine+1 > maxReadLines {
+			params.EndLine = params.StartLine + maxReadLines - 1
 		}
+
+		// Clamp to file bounds
+		if params.StartLine > totalLines {
+			return fmt.Sprintf("error: start_line %d is beyond end of file (%d lines)", params.StartLine, totalLines), nil
+		}
+		if params.EndLine > totalLines {
+			params.EndLine = totalLines
+		}
+
+		startIdx := params.StartLine - 1
+		endIdx := params.EndLine
 
 		pageLines := lines[startIdx:endIdx]
 		content := formatHashlines(pageLines, startIdx)
 
-		header := fmt.Sprintf("[page %d/%d, lines %d-%d of %d]\n", params.Page, totalPages, startIdx+1, endIdx, totalLines)
+		header := fmt.Sprintf("[lines %d-%d of %d]\n", params.StartLine, params.EndLine, totalLines)
 		return header + content, nil
 	}),
 )

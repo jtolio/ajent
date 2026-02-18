@@ -39,7 +39,7 @@ var (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage: %s [flags] <session.hjl>\n", os.Args[0])
+	_, _ = fmt.Fprintf(os.Stderr, "Usage: %s [flags] <session.hjl>\n", os.Args[0])
 	flag.PrintDefaults()
 	os.Exit(1)
 }
@@ -54,6 +54,7 @@ func buildTools(braveAPIKey, searchURL string) []tools.Tool {
 		atools.CreateFileTool,
 		atools.GrepFileTool,
 		atools.TreeTool,
+		atools.FindReplaceTool,
 	}
 	if braveAPIKey != "" {
 		t = append(t, atools.NewWebSearchTool(braveAPIKey, searchURL))

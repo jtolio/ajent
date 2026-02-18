@@ -11,8 +11,9 @@ import (
 )
 
 type listDirArgs struct {
-	Path string `json:"path,omitempty" json-description:"The directory path to list. Defaults to the current working directory."`
-	Page int    `json:"page,omitempty" json-description:"Page number (1-indexed). If omitted or 0, returns page 1."`
+	Path   string `json:"path,omitempty" json-description:"The directory path to list. Defaults to the current working directory."`
+	Offset int    `json:"offset,omitempty" json-description:"1-indexed entry number to start from (default 1)"`
+	Limit  int    `json:"limit,omitempty" json-description:"Maximum number of entries to return (default 200, max 500)"`
 }
 
 // formatDirEntry formats a single directory entry with permissions, size, mod time, and name.
@@ -30,7 +31,7 @@ func formatDirEntry(path string, entry os.DirEntry) string {
 }
 
 var ListDirTool = tools.NewTool("list_directory",
-	tools.WithDescription("List directory contents with details (permissions, size, modification time, name). Returns one page at a time (100 entries per page)."),
+	tools.WithDescription("List directory contents with details (permissions, size, modification time, name). Use offset and limit to paginate (default 200 entries, max 500)."),
 	tools.WithArgSchema(listDirArgs{}),
 	tools.WithFunction(func(ctx context.Context, call tools.Call) (string, error) {
 		var params listDirArgs
@@ -41,8 +42,14 @@ var ListDirTool = tools.NewTool("list_directory",
 		if path == "" {
 			path = "."
 		}
-		if params.Page < 1 {
-			params.Page = 1
+		if params.Offset < 1 {
+			params.Offset = 1
+		}
+		if params.Limit <= 0 {
+			params.Limit = 200
+		}
+		if params.Limit > 500 {
+			params.Limit = 500
 		}
 
 		entries, err := os.ReadDir(path)
@@ -52,23 +59,21 @@ var ListDirTool = tools.NewTool("list_directory",
 
 		totalEntries := len(entries)
 		if totalEntries == 0 {
-			return "[page 1/1, 0 entries]\n(empty directory)", nil
+			return "[entries 0-0 of 0]\n(empty directory)", nil
 		}
 
-		totalPages := (totalEntries + entriesPerPage - 1) / entriesPerPage
-
-		if params.Page > totalPages {
-			return fmt.Sprintf("error: page %d does not exist (directory has %d pages)", params.Page, totalPages), nil
+		if params.Offset > totalEntries {
+			return fmt.Sprintf("error: offset %d is beyond the number of entries (%d)", params.Offset, totalEntries), nil
 		}
 
-		startIdx := (params.Page - 1) * entriesPerPage
-		endIdx := startIdx + entriesPerPage
+		startIdx := params.Offset - 1
+		endIdx := startIdx + params.Limit
 		if endIdx > totalEntries {
 			endIdx = totalEntries
 		}
 
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "[page %d/%d, entries %d-%d of %d]\n", params.Page, totalPages, startIdx+1, endIdx, totalEntries)
+		fmt.Fprintf(&sb, "[entries %d-%d of %d]\n", params.Offset, endIdx, totalEntries)
 		for _, entry := range entries[startIdx:endIdx] {
 			sb.WriteString(formatDirEntry(path, entry))
 			sb.WriteByte('\n')

@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	linesPerPage   = 100
-	entriesPerPage = 100
-)
-
 // hashLineContent returns a 2-character hex hash of the line content.
 func hashLineContent(line string) string {
 	h := fnv.New32a()

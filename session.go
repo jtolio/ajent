@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ func NewSession(client gen.Gen, model string,
 		gen.WithModel(gen.Model{Provider: client.Provider(), Name: model}),
 	}
 	if cfg.MaxTokens != 0 {
-		opts = append(opts, gen.WithMaxTokens(1024))
+		opts = append(opts, gen.WithMaxTokens(cfg.MaxTokens))
 	}
 	if len(cfg.Tools) > 0 {
 		opts = append(opts, gen.WithTools(cfg.Tools...))
@@ -121,6 +122,14 @@ func (s *Session) callTool(ctx context.Context, call tools.Call) string {
 	return result
 }
 
+func (s *Session) buildContextMessage() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "(unknown)"
+	}
+	return fmt.Sprintf("Working directory: %s\n", cwd)
+}
+
 func (s *Session) Run(ctx context.Context) error {
 	addToHistory := func(p ...prompt.Prompt) error {
 		s.history = append(s.history, p...)
@@ -128,6 +137,11 @@ func (s *Session) Run(ctx context.Context) error {
 			return s.serialized.Append(p...)
 		}
 		return nil
+	}
+
+	// Inject execution context at the start of every run
+	if err := addToHistory(prompt.AsUser(s.buildContextMessage())); err != nil {
+		return err
 	}
 
 	for firstLoop := true; true; firstLoop = false {
@@ -147,7 +161,10 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 
 			for _, call := range resp.Tools {
-				fmt.Fprintf(s.output, "[%s %s]\n", call.Name, string(call.Argument))
+				_, err = fmt.Fprintf(s.output, "[%s %s]\n", call.Name, string(call.Argument))
+				if err != nil {
+					return err
+				}
 				if err := addToHistory(
 					prompt.AsToolCall(call.ID, call.Name, call.Argument),
 					prompt.AsToolResponse(call.ID, call.Name, s.addTimestamp(s.callTool(ctx, call))),
