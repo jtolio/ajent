@@ -19,12 +19,21 @@ const (
 	maxUserLineLength = 32768
 )
 
+// jsonUnescapeHTML reverses Go's default JSON HTML-safety escaping for
+// display purposes. Go's encoding/json escapes &, <, and > as \u0026,
+// \u003c, and \u003e respectively. These are the only three characters
+// affected.
+var jsonUnescapeHTML = strings.NewReplacer(
+	`\u0026`, `&`,
+	`\u003c`, `<`,
+	`\u003e`, `>`,
+)
+
 type Config struct {
 	MaxTokens    int
 	SystemPrompt string
 	Serializer   Serializer
 	Tools        []tools.Tool
-	NoTimestamps bool
 }
 
 type Session struct {
@@ -105,13 +114,17 @@ func (s *Session) getUserInput(ctx context.Context) (string, error) {
 }
 
 func (s *Session) addTimestamp(result string) string {
-	if s.cfg.NoTimestamps {
-		return result
-	}
 	return time.Now().Format("[2006-01-02 15:04:05 MST]\n") + result
 }
 
-func (s *Session) callTool(ctx context.Context, call tools.Call) string {
+func (s *Session) callTool(ctx context.Context, call tools.Call) (rv string) {
+	start := time.Now()
+	defer func() {
+		rv = fmt.Sprintf("[start: %s, duration: %s]\n",
+			time.Now().Format("2006-01-02 15:04:05 MST"),
+			time.Since(start)) + rv
+	}()
+
 	if call.Ref == nil {
 		return fmt.Sprintf("error: unknown tool %q", call.Name)
 	}
@@ -161,13 +174,13 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 
 			for _, call := range resp.Tools {
-				_, err = fmt.Fprintf(s.output, "[%s %s]\n", call.Name, string(call.Argument))
+				_, err = fmt.Fprintf(s.output, "[%s %s]\n", call.Name, jsonUnescapeHTML.Replace(string(call.Argument)))
 				if err != nil {
 					return err
 				}
 				if err := addToHistory(
 					prompt.AsToolCall(call.ID, call.Name, call.Argument),
-					prompt.AsToolResponse(call.ID, call.Name, s.addTimestamp(s.callTool(ctx, call))),
+					prompt.AsToolResponse(call.ID, call.Name, s.callTool(ctx, call)),
 				); err != nil {
 					return err
 				}

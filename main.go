@@ -34,8 +34,6 @@ var (
 	flagMaxTokens    = flag.Int("max-tokens", 0, "max tokens")
 	flagBraveAPIKey  = flag.String("brave-api-key", "", "Brave Search API key (enables web_search tool)")
 	flagSearchURL    = flag.String("search-url", "", "Custom search endpoint URL (defaults to Brave Search API)")
-
-	flagNoTimestamps = flag.Bool("no-timestamps", false, "if true, disable timestamps")
 )
 
 func usage() {
@@ -97,10 +95,9 @@ func main() {
 	}
 
 	cfg := Config{
-		MaxTokens:    *flagMaxTokens,
-		Tools:        buildTools(*flagBraveAPIKey, *flagSearchURL),
-		Serializer:   NewFileSerializer(sessionPath),
-		NoTimestamps: *flagNoTimestamps,
+		MaxTokens:  *flagMaxTokens,
+		Tools:      buildTools(*flagBraveAPIKey, *flagSearchURL),
+		Serializer: NewFileSerializer(sessionPath),
 	}
 
 	if *flagSystemPrompt != "" {

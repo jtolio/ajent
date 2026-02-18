@@ -37,7 +37,7 @@ var BashTool = tools.NewTool("bash",
 		cmd := exec.CommandContext(ctx, "bash", "-c", params.Command)
 		output, err := cmd.CombinedOutput()
 		if len(output) > bashMaxOutput {
-			output = append([]byte("... (output truncated)\n"), output[len(output)-bashMaxOutput:]...)
+			output = append([]byte("[output truncated]\n"), output[len(output)-bashMaxOutput:]...)
 		}
 		if ctx.Err() == context.DeadlineExceeded {
 			return fmt.Sprintf("error: command timed out after %v\n%s", bashTimeout, string(output)), nil
