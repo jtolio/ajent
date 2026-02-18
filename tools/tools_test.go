@@ -763,6 +763,330 @@ func TestBashTool_MultilineOutput(t *testing.T) {
 	}
 }
 
+// --- read_file line parameter tests ---
+
+func TestReadFileTool_LineParam(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 250; i++ {
+		fmt.Fprintf(&sb, "line %d\n", i+1)
+	}
+	path := writeTestFile(t, dir, "test.txt", sb.String())
+
+	// Line 150 should be on page 2 (lines 101-200)
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Line: 150})
+	if !strings.Contains(result, "[page 2/3") {
+		t.Errorf("expected page 2/3, got: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+	if !strings.Contains(result, "lines 101-200 of 250") {
+		t.Errorf("expected 'lines 101-200 of 250', got: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+}
+
+func TestReadFileTool_LineParamFirstPage(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 250; i++ {
+		fmt.Fprintf(&sb, "line %d\n", i+1)
+	}
+	path := writeTestFile(t, dir, "test.txt", sb.String())
+
+	// Line 1 should be on page 1
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Line: 1})
+	if !strings.Contains(result, "[page 1/3") {
+		t.Errorf("expected page 1/3, got: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+}
+
+func TestReadFileTool_LineParamLastPage(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 250; i++ {
+		fmt.Fprintf(&sb, "line %d\n", i+1)
+	}
+	path := writeTestFile(t, dir, "test.txt", sb.String())
+
+	// Line 250 should be on page 3
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Line: 250})
+	if !strings.Contains(result, "[page 3/3") {
+		t.Errorf("expected page 3/3, got: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+}
+
+func TestReadFileTool_LineOverridesPage(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 250; i++ {
+		fmt.Fprintf(&sb, "line %d\n", i+1)
+	}
+	path := writeTestFile(t, dir, "test.txt", sb.String())
+
+	// Line 150 (page 2) should override page 1
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 1, Line: 150})
+	if !strings.Contains(result, "[page 2/3") {
+		t.Errorf("expected line to override page, got: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+}
+
+// --- create_file tool tests ---
+
+func TestCreateFileTool_Basic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "new.txt")
+
+	result := callTool(t, CreateFileTool, createFileArgs{Path: path, Content: "hello\nworld\n"})
+	if !strings.Contains(result, "ok: created") {
+		t.Fatalf("expected ok, got: %s", result)
+	}
+	if !strings.Contains(result, "|hello") {
+		t.Errorf("expected hashline content in output, got: %s", result)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "hello\nworld\n" {
+		t.Errorf("unexpected file content: %q", string(data))
+	}
+}
+
+func TestCreateFileTool_RefusesOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "existing.txt", "original")
+
+	result := callTool(t, CreateFileTool, createFileArgs{Path: path, Content: "overwrite"})
+	if !strings.Contains(result, "error: file already exists") {
+		t.Errorf("expected overwrite refusal, got: %s", result)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "original" {
+		t.Errorf("file should be unchanged, got: %q", string(data))
+	}
+}
+
+func TestCreateFileTool_EmptyContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.txt")
+
+	result := callTool(t, CreateFileTool, createFileArgs{Path: path, Content: ""})
+	if !strings.Contains(result, "ok: created") {
+		t.Fatalf("expected ok, got: %s", result)
+	}
+	if !strings.Contains(result, "empty file") {
+		t.Errorf("expected empty file note, got: %s", result)
+	}
+}
+
+func TestCreateFileTool_MissingPath(t *testing.T) {
+	result := callTool(t, CreateFileTool, createFileArgs{Content: "hello"})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for missing path, got: %s", result)
+	}
+}
+
+func TestCreateFileTool_NoParentDir(t *testing.T) {
+	result := callTool(t, CreateFileTool, createFileArgs{Path: "/nonexistent/dir/file.txt", Content: "hello"})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for missing parent dir, got: %s", result)
+	}
+}
+
+// --- grep_file tool tests ---
+
+func TestGrepFileTool_Basic(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "hello world\nfoo bar\nhello again\n")
+
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "hello"})
+	if !strings.Contains(result, "2 matches") {
+		t.Errorf("expected 2 matches, got: %s", result)
+	}
+	if !strings.Contains(result, "|hello world") {
+		t.Errorf("expected 'hello world' match, got: %s", result)
+	}
+	if !strings.Contains(result, "|hello again") {
+		t.Errorf("expected 'hello again' match, got: %s", result)
+	}
+}
+
+func TestGrepFileTool_NoMatches(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "hello world\n")
+
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "xyz"})
+	if !strings.Contains(result, "no matches") {
+		t.Errorf("expected no matches, got: %s", result)
+	}
+}
+
+func TestGrepFileTool_PageAnnotation(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 150; i++ {
+		fmt.Fprintf(&sb, "line %d\n", i+1)
+	}
+	path := writeTestFile(t, dir, "test.txt", sb.String())
+
+	// Search for "line 150" which is on page 2
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "line 150"})
+	if !strings.Contains(result, "[page 2]") {
+		t.Errorf("expected [page 2] annotation, got: %s", result)
+	}
+}
+
+func TestGrepFileTool_CaseSensitive(t *testing.T) {
+	dir := t.TempDir()
+	path := writeTestFile(t, dir, "test.txt", "Hello\nhello\nHELLO\n")
+
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "hello"})
+	if !strings.Contains(result, "1 match") {
+		t.Errorf("expected exactly 1 match (case-sensitive), got: %s", result)
+	}
+}
+
+func TestGrepFileTool_MaxMatches(t *testing.T) {
+	dir := t.TempDir()
+	var sb strings.Builder
+	for i := 0; i < 150; i++ {
+		sb.WriteString("match\n")
+	}
+	path := writeTestFile(t, dir, "test.txt", sb.String())
+
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: path, Query: "match"})
+	if !strings.Contains(result, "100 matches") {
+		t.Errorf("expected 100 matches (capped), got: %s", result)
+	}
+	if !strings.Contains(result, "truncated") {
+		t.Errorf("expected truncation note, got: %s", result)
+	}
+}
+
+func TestGrepFileTool_MissingArgs(t *testing.T) {
+	result := callTool(t, GrepFileTool, grepFileArgs{Path: "/tmp/x"})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for missing query, got: %s", result)
+	}
+
+	result = callTool(t, GrepFileTool, grepFileArgs{Query: "x"})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error for missing path, got: %s", result)
+	}
+}
+
+// --- tree tool tests ---
+
+func TestTreeTool_Basic(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	writeTestFile(t, dir, "file1.txt", "hello")
+	writeTestFile(t, filepath.Join(dir, "subdir"), "file2.txt", "world")
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir})
+	if !strings.Contains(result, "subdir") {
+		t.Errorf("expected 'subdir' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "file1.txt") {
+		t.Errorf("expected 'file1.txt' in output, got: %s", result)
+	}
+	if !strings.Contains(result, "file2.txt") {
+		t.Errorf("expected 'file2.txt' in output, got: %s", result)
+	}
+}
+
+func TestTreeTool_DirsBeforeFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "adir"), 0755)
+	writeTestFile(t, dir, "bfile.txt", "")
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir})
+	adirIdx := strings.Index(result, "adir")
+	bfileIdx := strings.Index(result, "bfile.txt")
+	if adirIdx < 0 || bfileIdx < 0 {
+		t.Fatalf("expected both entries, got: %s", result)
+	}
+	if adirIdx > bfileIdx {
+		t.Errorf("expected directory before file, got: %s", result)
+	}
+}
+
+func TestTreeTool_HiddenFilesDefault(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, ".hidden", "")
+	writeTestFile(t, dir, "visible", "")
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir})
+	if strings.Contains(result, ".hidden") {
+		t.Errorf("expected hidden file to be excluded, got: %s", result)
+	}
+	if !strings.Contains(result, "visible") {
+		t.Errorf("expected visible file in output, got: %s", result)
+	}
+}
+
+func TestTreeTool_ShowHidden(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, ".hidden", "")
+	writeTestFile(t, dir, "visible", "")
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir, ShowHidden: true})
+	if !strings.Contains(result, ".hidden") {
+		t.Errorf("expected hidden file with show_hidden, got: %s", result)
+	}
+}
+
+func TestTreeTool_DepthLimit(t *testing.T) {
+	dir := t.TempDir()
+	deep := filepath.Join(dir, "a", "b", "c")
+	os.MkdirAll(deep, 0755)
+	writeTestFile(t, deep, "deep.txt", "")
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir, Depth: 1})
+	if !strings.Contains(result, "a") {
+		t.Errorf("expected 'a' at depth 1, got: %s", result)
+	}
+	if strings.Contains(result, "b") {
+		t.Errorf("expected 'b' to be excluded at depth 1, got: %s", result)
+	}
+}
+
+func TestTreeTool_Pagination(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 120; i++ {
+		writeTestFile(t, dir, fmt.Sprintf("file_%04d.txt", i), "")
+	}
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir, Page: 1})
+	if !strings.Contains(result, "[page 1/2") {
+		t.Errorf("expected page 1/2, got: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+
+	result = callTool(t, TreeTool, treeArgs{Path: dir, Page: 2})
+	if !strings.Contains(result, "[page 2/2") {
+		t.Errorf("expected page 2/2, got: %s", strings.SplitN(result, "\n", 2)[0])
+	}
+}
+
+func TestTreeTool_NonexistentDir(t *testing.T) {
+	result := callTool(t, TreeTool, treeArgs{Path: "/nonexistent/dir"})
+	if !strings.Contains(result, "error:") {
+		t.Errorf("expected error, got: %s", result)
+	}
+}
+
+func TestTreeTool_TreeFormat(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "dir1"), 0755)
+	writeTestFile(t, dir, "file1.txt", "")
+
+	result := callTool(t, TreeTool, treeArgs{Path: dir})
+	// Should contain tree drawing characters
+	if !strings.Contains(result, "├── ") && !strings.Contains(result, "└── ") {
+		t.Errorf("expected tree connectors in output, got: %s", result)
+	}
+}
+
 // --- Integration: read then edit ---
 
 func TestIntegration_ReadThenEdit(t *testing.T) {

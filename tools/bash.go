@@ -12,7 +12,7 @@ import (
 
 const (
 	bashTimeout   = 60 * time.Second
-	bashMaxOutput = 64 * 1024
+	bashMaxOutput = 8 * 1024
 )
 
 type bashArgs struct {
@@ -20,7 +20,7 @@ type bashArgs struct {
 }
 
 var BashTool = tools.NewTool("bash",
-	tools.WithDescription("Execute a bash command and return its combined stdout and stderr output."),
+	tools.WithDescription("Execute a bash command and return its combined stdout and stderr output. Output is limited to 8KB (tail is kept). For commands with large output, redirect to a file and use read_file or grep_file to inspect it."),
 	tools.WithArgSchema(bashArgs{}),
 	tools.WithFunction(func(ctx context.Context, call tools.Call) (string, error) {
 		var params bashArgs

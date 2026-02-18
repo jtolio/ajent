@@ -15,7 +15,7 @@ import (
 	"github.com/modfin/bellman/services/vllm"
 	"github.com/modfin/bellman/tools"
 
-	ajenttools "github.com/jtolio/ajent/tools"
+	atools "github.com/jtolio/ajent/tools"
 )
 
 var (
@@ -33,6 +33,7 @@ var (
 	flagSystemPrompt = flag.String("system-prompt", "", "path to a system prompt file")
 	flagMaxTokens    = flag.Int("max-tokens", 0, "max tokens")
 	flagBraveAPIKey  = flag.String("brave-api-key", "", "Brave Search API key (enables web_search tool)")
+	flagSearchURL    = flag.String("search-url", "", "Custom search endpoint URL (defaults to Brave Search API)")
 
 	flagNoTimestamps = flag.Bool("no-timestamps", false, "if true, disable timestamps")
 )
@@ -43,16 +44,19 @@ func usage() {
 	os.Exit(1)
 }
 
-func buildTools(braveAPIKey string) []tools.Tool {
+func buildTools(braveAPIKey, searchURL string) []tools.Tool {
 	t := []tools.Tool{
-		ajenttools.WebFetchTool,
-		ajenttools.ReadFileTool,
-		ajenttools.ListDirTool,
-		ajenttools.EditFileTool,
-		ajenttools.BashTool,
+		atools.WebFetchTool,
+		atools.ReadFileTool,
+		atools.ListDirTool,
+		atools.EditFileTool,
+		atools.BashTool,
+		atools.CreateFileTool,
+		atools.GrepFileTool,
+		atools.TreeTool,
 	}
 	if braveAPIKey != "" {
-		t = append(t, ajenttools.NewWebSearchTool(braveAPIKey))
+		t = append(t, atools.NewWebSearchTool(braveAPIKey, searchURL))
 	}
 	return t
 }
@@ -93,7 +97,7 @@ func main() {
 
 	cfg := Config{
 		MaxTokens:    *flagMaxTokens,
-		Tools:        buildTools(*flagBraveAPIKey),
+		Tools:        buildTools(*flagBraveAPIKey, *flagSearchURL),
 		Serializer:   NewFileSerializer(sessionPath),
 		NoTimestamps: *flagNoTimestamps,
 	}

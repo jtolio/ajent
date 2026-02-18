@@ -16,7 +16,12 @@ type searchArgs struct {
 	Query string `json:"query" json-description:"The search query"`
 }
 
-func NewWebSearchTool(apiKey string) tools.Tool {
+const defaultSearchEndpoint = "https://api.search.brave.com/res/v1/web/search"
+
+func NewWebSearchTool(apiKey, endpoint string) tools.Tool {
+	if endpoint == "" {
+		endpoint = defaultSearchEndpoint
+	}
 	return tools.NewTool("web_search",
 		tools.WithDescription("Search the web using Brave Search and return the top results."),
 		tools.WithArgSchema(searchArgs{}),
@@ -29,7 +34,7 @@ func NewWebSearchTool(apiKey string) tools.Tool {
 				return "error: query is required", nil
 			}
 
-			reqURL := "https://api.search.brave.com/res/v1/web/search?q=" + url.QueryEscape(params.Query)
+			reqURL := endpoint + "?q=" + url.QueryEscape(params.Query)
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 			if err != nil {
 				return fmt.Sprintf("error: %v", err), nil

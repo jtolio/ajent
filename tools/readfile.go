@@ -11,10 +11,11 @@ import (
 type readFileArgs struct {
 	Path string `json:"path" json-description:"The path to the file to read"`
 	Page int    `json:"page,omitempty" json-description:"Page number (1-indexed). If omitted or 0, returns page 1."`
+	Line int    `json:"line,omitempty" json-description:"Jump to the page containing this line number (1-indexed). Takes precedence over page."`
 }
 
 var ReadFileTool = tools.NewTool("read_file",
-	tools.WithDescription("Read a file with hashline-prefixed lines. Returns one page at a time (100 lines per page). Each line is prefixed with its line number and a content hash in the format 'line:hash|content'. Use the line:hash references with the edit_file tool."),
+	tools.WithDescription("Read a file with hashline-prefixed lines. Returns one page at a time (100 lines per page). Each line is prefixed with its line number and a content hash in the format 'line:hash|content'. Use the line:hash references with the edit_file tool. Use the line parameter to jump directly to the page containing a specific line number."),
 	tools.WithArgSchema(readFileArgs{}),
 	tools.WithFunction(func(ctx context.Context, call tools.Call) (string, error) {
 		var params readFileArgs
@@ -23,6 +24,9 @@ var ReadFileTool = tools.NewTool("read_file",
 		}
 		if params.Path == "" {
 			return "error: path is required", nil
+		}
+		if params.Line > 0 {
+			params.Page = (params.Line-1)/linesPerPage + 1
 		}
 		if params.Page < 1 {
 			params.Page = 1
