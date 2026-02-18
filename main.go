@@ -10,16 +10,15 @@ import (
 	"github.com/modfin/bellman/models/gen"
 	"github.com/modfin/bellman/services/anthropic"
 	"github.com/modfin/bellman/services/ollama"
-	"github.com/modfin/bellman/services/openai"
+	"github.com/jtolio/ajent/providers"
 	"github.com/modfin/bellman/services/vertexai"
-	"github.com/modfin/bellman/services/vllm"
 	"github.com/modfin/bellman/tools"
 
 	atools "github.com/jtolio/ajent/tools"
 )
 
 var (
-	flagProvider = flag.String("provider", "anthropic", "the provider/protocol to use. must be either anthropic, ollama, openai, vertexai, or vllm")
+	flagProvider = flag.String("provider", "anthropic", "the provider/protocol to use: anthropic, ollama, openai, or vertexai. openai supports -url for OpenAI-compatible providers (e.g. fireworks.ai, vllm)")
 
 	flagModel = flag.String("model", "claude-haiku-4-5", "the model to use")
 
@@ -77,7 +76,11 @@ func main() {
 	case "ollama":
 		client = ollama.New(*flagURL)
 	case "openai":
-		client = openai.New(*flagAPIKey)
+		var err error
+		client, err = providers.NewOpenAICompat(*flagAPIKey, *flagURL, *flagModel)
+		if err != nil {
+			panic(err)
+		}
 	case "vertexai":
 		var err error
 		client, err = vertexai.New(vertexai.GoogleConfig{
@@ -88,8 +91,6 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-	case "vllm":
-		client = vllm.New([]string{*flagURL}, []string{*flagModel})
 	default:
 		usage()
 	}
