@@ -14,6 +14,8 @@ import (
 	"github.com/modfin/bellman/services/vertexai"
 	"github.com/modfin/bellman/services/vllm"
 	"github.com/modfin/bellman/tools"
+
+	ajenttools "github.com/jtolio/ajent/tools"
 )
 
 var (
@@ -43,14 +45,14 @@ func usage() {
 
 func buildTools(braveAPIKey string) []tools.Tool {
 	t := []tools.Tool{
-		webFetchTool,
-		readFileTool,
-		listDirTool,
-		editFileTool,
-		bashTool,
+		ajenttools.WebFetchTool,
+		ajenttools.ReadFileTool,
+		ajenttools.ListDirTool,
+		ajenttools.EditFileTool,
+		ajenttools.BashTool,
 	}
 	if braveAPIKey != "" {
-		t = append(t, newWebSearchTool(braveAPIKey))
+		t = append(t, ajenttools.NewWebSearchTool(braveAPIKey))
 	}
 	return t
 }

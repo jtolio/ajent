@@ -1,4 +1,4 @@
-package main
+package tools
 
 import (
 	"context"
@@ -266,7 +266,7 @@ func TestReadFileTool_BasicFile(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "test.txt", "hello\nworld\n")
 
-	result := callTool(t, readFileTool, readFileArgs{Path: path})
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path})
 
 	if !strings.Contains(result, "[page 1/1") {
 		t.Errorf("expected page header, got: %s", result)
@@ -283,7 +283,7 @@ func TestReadFileTool_EmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "test.txt", "")
 
-	result := callTool(t, readFileTool, readFileArgs{Path: path})
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path})
 
 	if !strings.Contains(result, "(empty file)") {
 		t.Errorf("expected '(empty file)', got: %s", result)
@@ -299,7 +299,7 @@ func TestReadFileTool_Pagination(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", sb.String())
 
 	// Page 1
-	result := callTool(t, readFileTool, readFileArgs{Path: path, Page: 1})
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 1})
 	if !strings.Contains(result, "[page 1/3") {
 		t.Errorf("expected page 1/3, got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
@@ -308,7 +308,7 @@ func TestReadFileTool_Pagination(t *testing.T) {
 	}
 
 	// Page 3
-	result = callTool(t, readFileTool, readFileArgs{Path: path, Page: 3})
+	result = callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 3})
 	if !strings.Contains(result, "[page 3/3") {
 		t.Errorf("expected page 3/3, got: %s", strings.SplitN(result, "\n", 2)[0])
 	}
@@ -317,7 +317,7 @@ func TestReadFileTool_Pagination(t *testing.T) {
 	}
 
 	// Page out of range
-	result = callTool(t, readFileTool, readFileArgs{Path: path, Page: 4})
+	result = callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 4})
 	if !strings.Contains(result, "error:") {
 		t.Errorf("expected error for page 4, got: %s", result)
 	}
@@ -328,21 +328,21 @@ func TestReadFileTool_DefaultPage(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "hello\n")
 
 	// Page 0 should default to page 1
-	result := callTool(t, readFileTool, readFileArgs{Path: path, Page: 0})
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path, Page: 0})
 	if !strings.Contains(result, "[page 1/1") {
 		t.Errorf("expected page 1, got: %s", result)
 	}
 }
 
 func TestReadFileTool_NonexistentFile(t *testing.T) {
-	result := callTool(t, readFileTool, readFileArgs{Path: "/nonexistent/file.txt"})
+	result := callTool(t, ReadFileTool, readFileArgs{Path: "/nonexistent/file.txt"})
 	if !strings.Contains(result, "error:") {
 		t.Errorf("expected error, got: %s", result)
 	}
 }
 
 func TestReadFileTool_MissingPath(t *testing.T) {
-	result := callTool(t, readFileTool, readFileArgs{})
+	result := callTool(t, ReadFileTool, readFileArgs{})
 	if !strings.Contains(result, "error:") {
 		t.Errorf("expected error for missing path, got: %s", result)
 	}
@@ -352,7 +352,7 @@ func TestReadFileTool_HashlineFormat(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "test.txt", "first line\nsecond line\n")
 
-	result := callTool(t, readFileTool, readFileArgs{Path: path})
+	result := callTool(t, ReadFileTool, readFileArgs{Path: path})
 
 	// Check each hashline has the right format: linenum:hash|content
 	lines := strings.Split(strings.TrimSpace(result), "\n")
@@ -377,7 +377,7 @@ func TestListDirTool_Basic(t *testing.T) {
 	writeTestFile(t, dir, "a.txt", "hello")
 	writeTestFile(t, dir, "b.txt", "world")
 
-	result := callTool(t, listDirTool, listDirArgs{Path: dir})
+	result := callTool(t, ListDirTool, listDirArgs{Path: dir})
 
 	if !strings.Contains(result, "a.txt") {
 		t.Errorf("expected 'a.txt' in output, got: %s", result)
@@ -389,14 +389,14 @@ func TestListDirTool_Basic(t *testing.T) {
 
 func TestListDirTool_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	result := callTool(t, listDirTool, listDirArgs{Path: dir})
+	result := callTool(t, ListDirTool, listDirArgs{Path: dir})
 	if !strings.Contains(result, "(empty directory)") {
 		t.Errorf("expected '(empty directory)', got: %s", result)
 	}
 }
 
 func TestListDirTool_NonexistentDir(t *testing.T) {
-	result := callTool(t, listDirTool, listDirArgs{Path: "/nonexistent/dir"})
+	result := callTool(t, ListDirTool, listDirArgs{Path: "/nonexistent/dir"})
 	if !strings.Contains(result, "error:") {
 		t.Errorf("expected error, got: %s", result)
 	}
@@ -417,12 +417,12 @@ func TestListDirTool_Pagination(t *testing.T) {
 		t.Fatalf("expected at least 150 entries, got %d", len(entries))
 	}
 
-	result := callTool(t, listDirTool, listDirArgs{Path: dir, Page: 1})
+	result := callTool(t, ListDirTool, listDirArgs{Path: dir, Page: 1})
 	if !strings.Contains(result, "[page 1/2") {
 		t.Errorf("expected page 1/2, got first line: %s", strings.SplitN(result, "\n", 2)[0])
 	}
 
-	result = callTool(t, listDirTool, listDirArgs{Path: dir, Page: 2})
+	result = callTool(t, ListDirTool, listDirArgs{Path: dir, Page: 2})
 	if !strings.Contains(result, "[page 2/2") {
 		t.Errorf("expected page 2/2, got first line: %s", strings.SplitN(result, "\n", 2)[0])
 	}
@@ -432,7 +432,7 @@ func TestListDirTool_ShowsPermissions(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "test.txt", "hello")
 
-	result := callTool(t, listDirTool, listDirArgs{Path: dir})
+	result := callTool(t, ListDirTool, listDirArgs{Path: dir})
 
 	// Should contain permission string like "-rw-"
 	if !strings.Contains(result, "rw") {
@@ -452,7 +452,7 @@ func TestEditFileTool_ReplaceSingleLine(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "line1\nline2\nline3\n")
 
 	hash := getHash(t, "line2")
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "2:" + hash,
@@ -478,7 +478,7 @@ func TestEditFileTool_ReplaceRange(t *testing.T) {
 
 	hashB := getHash(t, "b")
 	hashD := getHash(t, "d")
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "2:" + hashB,
@@ -504,7 +504,7 @@ func TestEditFileTool_DeleteLines(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "keep\ndelete\nkeep2\n")
 
 	hash := getHash(t, "delete")
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "2:" + hash,
@@ -529,7 +529,7 @@ func TestEditFileTool_InsertAfter(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "line1\nline2\nline3\n")
 
 	hash := getHash(t, "line1")
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "insert_after",
 		Start:     "1:" + hash,
@@ -554,7 +554,7 @@ func TestEditFileTool_InsertMultipleLines(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "a\nb\n")
 
 	hash := getHash(t, "a")
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "insert_after",
 		Start:     "1:" + hash,
@@ -578,7 +578,7 @@ func TestEditFileTool_HashMismatch(t *testing.T) {
 	dir := t.TempDir()
 	path := writeTestFile(t, dir, "test.txt", "hello\n")
 
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "1:zz",
@@ -604,7 +604,7 @@ func TestEditFileTool_LineOutOfBounds(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "hello\n")
 
 	hash := getHash(t, "hello")
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "5:" + hash,
@@ -622,7 +622,7 @@ func TestEditFileTool_EndBeforeStart(t *testing.T) {
 
 	hashA := getHash(t, "a")
 	hashC := getHash(t, "c")
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "3:" + hashC,
@@ -636,7 +636,7 @@ func TestEditFileTool_EndBeforeStart(t *testing.T) {
 }
 
 func TestEditFileTool_MissingPath(t *testing.T) {
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Operation: "replace",
 		Start:     "1:ff",
 		Content:   "x",
@@ -647,7 +647,7 @@ func TestEditFileTool_MissingPath(t *testing.T) {
 }
 
 func TestEditFileTool_NonexistentFile(t *testing.T) {
-	result := callTool(t, editFileTool, editFileArgs{
+	result := callTool(t, EditFileTool, editFileArgs{
 		Path:      "/nonexistent/file.txt",
 		Operation: "replace",
 		Start:     "1:ff",
@@ -663,7 +663,7 @@ func TestEditFileTool_ReplaceFirstLine(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "old\nsecond\n")
 
 	hash := getHash(t, "old")
-	callTool(t, editFileTool, editFileArgs{
+	callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "1:" + hash,
@@ -681,7 +681,7 @@ func TestEditFileTool_ReplaceLastLine(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "first\nlast\n")
 
 	hash := getHash(t, "last")
-	callTool(t, editFileTool, editFileArgs{
+	callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     "2:" + hash,
@@ -699,7 +699,7 @@ func TestEditFileTool_InsertAfterLastLine(t *testing.T) {
 	path := writeTestFile(t, dir, "test.txt", "first\nlast\n")
 
 	hash := getHash(t, "last")
-	callTool(t, editFileTool, editFileArgs{
+	callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "insert_after",
 		Start:     "2:" + hash,
@@ -715,28 +715,28 @@ func TestEditFileTool_InsertAfterLastLine(t *testing.T) {
 // --- bash tool tests ---
 
 func TestBashTool_SimpleCommand(t *testing.T) {
-	result := callTool(t, bashTool, bashArgs{Command: "echo hello"})
+	result := callTool(t, BashTool, bashArgs{Command: "echo hello"})
 	if strings.TrimSpace(result) != "hello" {
 		t.Errorf("expected 'hello', got: %q", result)
 	}
 }
 
 func TestBashTool_ExitStatus(t *testing.T) {
-	result := callTool(t, bashTool, bashArgs{Command: "exit 1"})
+	result := callTool(t, BashTool, bashArgs{Command: "exit 1"})
 	if !strings.Contains(result, "exit status") {
 		t.Errorf("expected exit status error, got: %s", result)
 	}
 }
 
 func TestBashTool_Stderr(t *testing.T) {
-	result := callTool(t, bashTool, bashArgs{Command: "echo error >&2"})
+	result := callTool(t, BashTool, bashArgs{Command: "echo error >&2"})
 	if !strings.Contains(result, "error") {
 		t.Errorf("expected stderr in output, got: %s", result)
 	}
 }
 
 func TestBashTool_MissingCommand(t *testing.T) {
-	result := callTool(t, bashTool, bashArgs{})
+	result := callTool(t, BashTool, bashArgs{})
 	if !strings.Contains(result, "error:") {
 		t.Errorf("expected error for missing command, got: %s", result)
 	}
@@ -744,7 +744,7 @@ func TestBashTool_MissingCommand(t *testing.T) {
 
 func TestBashTool_OutputTruncation(t *testing.T) {
 	// Generate output larger than bashMaxOutput
-	result := callTool(t, bashTool, bashArgs{
+	result := callTool(t, BashTool, bashArgs{
 		Command: "yes 'this is a long line of text for testing truncation' | head -n 100000",
 	})
 	if !strings.Contains(result, "... (output truncated)") {
@@ -757,7 +757,7 @@ func TestBashTool_OutputTruncation(t *testing.T) {
 }
 
 func TestBashTool_MultilineOutput(t *testing.T) {
-	result := callTool(t, bashTool, bashArgs{Command: "echo line1; echo line2; echo line3"})
+	result := callTool(t, BashTool, bashArgs{Command: "echo line1; echo line2; echo line3"})
 	if !strings.Contains(result, "line1") || !strings.Contains(result, "line3") {
 		t.Errorf("expected multiline output, got: %s", result)
 	}
@@ -770,7 +770,7 @@ func TestIntegration_ReadThenEdit(t *testing.T) {
 	path := writeTestFile(t, dir, "test.go", "package main\n\nfunc hello() {\n\treturn \"world\"\n}\n")
 
 	// Read the file
-	readResult := callTool(t, readFileTool, readFileArgs{Path: path})
+	readResult := callTool(t, ReadFileTool, readFileArgs{Path: path})
 
 	// Parse hashlines to get references
 	lines := strings.Split(readResult, "\n")
@@ -788,7 +788,7 @@ func TestIntegration_ReadThenEdit(t *testing.T) {
 	}
 
 	// Edit using the hashline reference
-	editResult := callTool(t, editFileTool, editFileArgs{
+	editResult := callTool(t, EditFileTool, editFileArgs{
 		Path:      path,
 		Operation: "replace",
 		Start:     returnLineRef,
