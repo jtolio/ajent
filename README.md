@@ -5,14 +5,19 @@ this is my attempt at writing my own coding agent harness.
 (1)
 
 the biggest goal with this harness is constant session persistence.
-you can't run this agent without specifying a persistence file for
-the session. this allows you to stop the agent at any point, and 
-pick back up by reopening the agent with the same session file.
+every session is backed by a persistence file. this allows you to
+stop the agent at any point, and pick back up by reopening the agent
+with the same session file.
 
 ```
 usage:
-  ajail ajent --api-key=<KEY> <your-session-file>
+  ajail ajent --api-key=<KEY> [your-session-file]
 ```
+
+if no session file is provided, one is automatically created in
+`~/.ajent/sessions/`, named after the basename of the current
+directory, a timestamp, and a short random hash (e.g.
+`myproject-20260218-143052-a1b2c3d4.hjl`).
 
 to make this work, this harness uses the provider-independent
 [bellman](http://github.com/modfin/bellman) library, which has

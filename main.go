@@ -36,7 +36,8 @@ var (
 )
 
 func usage() {
-	_, _ = fmt.Fprintf(os.Stderr, "Usage: %s [flags] <session.hjl>\n", os.Args[0])
+	_, _ = fmt.Fprintf(os.Stderr, "Usage: %s [flags] [session.hjl]\n", os.Args[0])
+	_, _ = fmt.Fprintf(os.Stderr, "If no session file is provided, one is created in ~/.ajent/sessions/\n")
 	flag.PrintDefaults()
 	os.Exit(1)
 }
@@ -63,11 +64,16 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	if flag.Arg(0) == "" {
-		usage()
-	}
-
 	sessionPath := flag.Arg(0)
+	if sessionPath == "" {
+		var err error
+		sessionPath, err = defaultSessionPath()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating session path: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "Session: %s\n", sessionPath)
+	}
 
 	var client gen.Gen
 	switch strings.ToLower(*flagProvider) {
