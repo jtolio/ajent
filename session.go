@@ -164,6 +164,16 @@ func (s *Session) Run(ctx context.Context) error {
 				return err
 			}
 
+			for _, thought := range resp.Thinking {
+				formatted := fmt.Sprintf("<thought>\n%s\n</thought>", thought)
+				if _, err := fmt.Fprintf(s.output, "%s\n\n", formatted); err != nil {
+					return err
+				}
+				if err := addToHistory(prompt.AsAssistant(formatted)); err != nil {
+					return err
+				}
+			}
+
 			for _, text := range resp.Texts {
 				if _, err := fmt.Fprintf(s.output, "%s\n\n", text); err != nil {
 					return err
@@ -183,7 +193,7 @@ func (s *Session) Run(ctx context.Context) error {
 					return err
 				}
 				if err := addToHistory(
-					prompt.AsToolCall(call.ID, call.Name, call.Argument),
+					prompt.Prompt{Role: prompt.ToolCallRole, ToolCall: &prompt.ToolCall{ToolCallID: call.ID, Name: call.Name, Arguments: call.Argument, ThoughtSignature: call.ThoughtSignature}},
 					prompt.AsToolResponse(call.ID, call.Name, func() string {
 						res := s.callTool(ctx, call)
 						if call.Name == "edit_file" || call.Name == "find_replace" || call.Name == "create_file" {
