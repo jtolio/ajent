@@ -42,6 +42,7 @@ var CreateFileTool = tools.NewTool("create_file",
 			return fmt.Sprintf("ok: created %s (empty file)", params.Path), nil
 		}
 
-		return fmt.Sprintf("ok: created %s (%d lines)\n%s", params.Path, len(lines), formatHashlines(lines, 0)), nil
+		diff := GenerateDiff(params.Path, "", params.Content)
+		return fmt.Sprintf("ok: created %s (%d lines)\n\nDiff:\n%s\nHashlines:\n%s", params.Path, len(lines), diff, formatHashlines(lines, 0)), nil
 	}),
 )

@@ -792,7 +792,7 @@ func TestBashTool_OutputTruncation(t *testing.T) {
 	result := callTool(t, BashTool, bashArgs{
 		Command: "yes 'this is a long line of text for testing truncation' | head -n 100000",
 	})
-	if !strings.Contains(result, "... (output truncated)") {
+	if !strings.Contains(result, "[output truncated]\n") {
 		t.Error("expected truncation notice in output")
 	}
 	if !strings.Contains(result, "this is a long line") {

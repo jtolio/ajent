@@ -54,6 +54,8 @@ var EditFileTool = tools.NewTool("edit_file",
 			return "error: start is required", nil
 		}
 
+		oldData, _ := os.ReadFile(params.Path)
+		oldContent := string(oldData)
 		lines, endsWithNewline, err := readFileLines(params.Path)
 		if err != nil {
 			return fmt.Sprintf("error: %v", err), nil
@@ -138,6 +140,7 @@ var EditFileTool = tools.NewTool("edit_file",
 			return fmt.Sprintf("error writing file: %v", err), nil
 		}
 
-		return fmt.Sprintf("ok: %s applied to %s (%d lines)", params.Operation, params.Path, len(lines)), nil
+		diff := GenerateDiff(params.Path, oldContent, content)
+		return fmt.Sprintf("ok: %s applied to %s (%d lines)\n\n%s", params.Operation, params.Path, len(lines), diff), nil
 	}),
 )

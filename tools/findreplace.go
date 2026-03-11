@@ -56,6 +56,8 @@ var FindReplaceTool = tools.NewTool("find_replace",
 		}
 
 		newLines := strings.Count(newContent, "\n")
-		return fmt.Sprintf("ok: replaced text in %s (%d lines)", params.Path, newLines+1), nil
+		diff := GenerateDiff(params.Path, content, newContent)
+		return fmt.Sprintf("ok: replaced text in %s (%d lines)\n\n%s", params.Path, newLines+1, diff), nil
+		
 	}),
 )

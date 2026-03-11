@@ -174,13 +174,23 @@ func (s *Session) Run(ctx context.Context) error {
 			}
 
 			for _, call := range resp.Tools {
-				_, err = fmt.Fprintf(s.output, "[%s %s]\n", call.Name, jsonUnescapeHTML.Replace(string(call.Argument)))
+				if call.Name == "edit_file" || call.Name == "find_replace" || call.Name == "create_file" {
+					_, err = fmt.Fprintf(s.output, "[%s]\n", call.Name)
+				} else {
+					_, err = fmt.Fprintf(s.output, "[%s %s]\n", call.Name, jsonUnescapeHTML.Replace(string(call.Argument)))
+				}
 				if err != nil {
 					return err
 				}
 				if err := addToHistory(
 					prompt.AsToolCall(call.ID, call.Name, call.Argument),
-					prompt.AsToolResponse(call.ID, call.Name, s.callTool(ctx, call)),
+					prompt.AsToolResponse(call.ID, call.Name, func() string {
+						res := s.callTool(ctx, call)
+						if call.Name == "edit_file" || call.Name == "find_replace" || call.Name == "create_file" {
+							_, _ = fmt.Fprintf(s.output, "%s\n", res)
+						}
+						return res
+					}()),
 				); err != nil {
 					return err
 				}
