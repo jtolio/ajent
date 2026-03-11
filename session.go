@@ -159,7 +159,26 @@ func (s *Session) Run(ctx context.Context) error {
 
 	for firstLoop := true; true; firstLoop = false {
 		if !firstLoop {
-			resp, err := s.gen.WithContext(ctx).Prompt(s.history...)
+			var resp *gen.Response
+			var err error
+			for retry := 0; retry < 8; retry++ {
+				resp, err = s.gen.WithContext(ctx).Prompt(s.history...)
+				if err == nil {
+					break
+				}
+				if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "503") {
+					backoff := time.Duration(1<<retry) * time.Second
+					_, _ = fmt.Fprintf(s.output, "[Rate limited/Overloaded, retrying in %v...]\n", backoff)
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(backoff):
+					}
+					continue
+				}
+				break
+			}
+
 			if err != nil {
 				return err
 			}
